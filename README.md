@@ -51,3 +51,15 @@ No Dockerfile / Railway config yet — that is still to do.
 Done: engine, protocol, mock server, mobile `/play`, live projector `/stage`, host `/host`, 19 engine tests.
 
 Left: clue media files, Railway (Singapore) deploy, 20-cluster dress rehearsal, a few live-ops hardening items. See the project-status canvas in this Cursor workspace for the full breakdown.
+
+## Contributing
+
+Do not push to `main`. Clone, create a branch, then open a pull request.
+
+```
+git clone https://github.com/tan1sh-dev/Event-The-Predictive-Engine.git
+cd Event-The-Predictive-Engine
+git checkout -b yourname/short-description
+```
+
+Push that branch and open a PR into `main`. Changes land only after review.
