@@ -11,7 +11,6 @@ apps/web            /play phones · /stage projector · /host control
 index.html / .js    live Three.js projector (served at /stage)
 assets/             projector logos + stage background
 media/              round clue images/audio (not in repo — drop files here)
-PROTOCOL.md         Socket.IO contract
 ```
 
 ## Commands
