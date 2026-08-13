@@ -1,0 +1,31 @@
+# dependencies
+node_modules
+
+# build output
+dist
+*.tsbuildinfo
+
+# local env / secrets
+.env
+.env.local
+.env.*.local
+
+# runtime game state (do not commit a live snapshot)
+apps/server/data
+
+# logs and OS junk
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# editor / tooling
+.idea
+.vscode/*
+!.vscode/extensions.json
+.vite
+coverage
+
+# unused design exports
+*.riv

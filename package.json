@@ -1,0 +1,25 @@
+{
+  "name": "the-predictive-engine",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Live AdaBoost audience game for the RVCE Coding Club induction showcase",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @engine/server",
+    "dev:web": "npm run dev -w @engine/web",
+    "dev:all": "concurrently -n server,web -c cyan,magenta \"npm run dev\" \"npm run dev:web\"",
+    "mock": "npm run mock -w @engine/server",
+    "test": "npm test -w @engine/server",
+    "build": "npm run build -w @engine/web && npm run build -w @engine/server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
