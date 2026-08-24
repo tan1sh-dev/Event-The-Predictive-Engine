@@ -26,7 +26,7 @@ export default function WeightOrb({
         />
         <div className="absolute h-28 w-28 rounded-full bg-white/10 blur-xl" />
       </div>
-      <p className="font-display text-3xl font-bold">{weight.toFixed(3)}</p>
+      <p className="font-display text-3xl font-bold">{weight.toFixed(2)}</p>
       <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-cream/50">
         Node weight
       </p>

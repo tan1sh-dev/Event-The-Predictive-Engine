@@ -142,9 +142,9 @@ function broadcastAdvance(): void {
   if (bots && (engine.step.phase === "voting_open" || engine.step.phase === "final_inference_open")) {
     randomVotes();
   }
-  if (engine.step.phase === "weight_update") {
+  if (engine.step.phase === "weight_update" && engine.step.roundId && engine.step.roundId !== "FINAL") {
     io.emit("weightsUpdated", {
-      roundId: engine.step.roundId!,
+      roundId: engine.step.roundId,
       discarded: engine.step.roundId === "R0",
       clusters: engine.snapshot().clusters,
     });

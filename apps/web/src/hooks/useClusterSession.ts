@@ -4,6 +4,7 @@ import {
   CLUSTER_COUNT,
   type ClientToServerEvents,
   type ClusterView,
+  type GameClock,
   type PowerUp,
   type ServerToClientEvents,
   type TeamDetails,
@@ -18,11 +19,12 @@ import {
   saveTeam,
   saveToken,
 } from "../lib/storage.ts";
+import { ingestGameClock } from "../lib/game-clock.ts";
 
 export type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 export function useEngineSocket(): GameSocket {
-  return useMemo(
+  const socket = useMemo(
     () =>
       io({
         transports: ["websocket", "polling"],
@@ -30,6 +32,16 @@ export function useEngineSocket(): GameSocket {
       }),
     [],
   );
+
+  useEffect(() => {
+    const onClock = (payload: GameClock) => ingestGameClock(payload);
+    socket.on("clock", onClock);
+    return () => {
+      socket.off("clock", onClock);
+    };
+  }, [socket]);
+
+  return socket;
 }
 
 export function useClusterSession(socket: GameSocket) {

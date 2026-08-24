@@ -22,6 +22,116 @@
     canvas { display: block; outline: none !important; }
     body { font-family: "GFS Didot", Didot, "Bodoni MT", serif; color: #e8f4ff; }
 
+    .stage-fx {
+      position: fixed;
+      inset: 0;
+      z-index: 8;
+      pointer-events: none;
+    }
+    .stage-vignette {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 50% 42%, transparent 38%, rgba(4, 6, 12, 0.55) 100%),
+        linear-gradient(180deg, rgba(8, 16, 28, 0.18), transparent 18%, transparent 78%, rgba(4, 8, 16, 0.42));
+    }
+    .stage-bloom {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 18% 12%, rgba(51, 230, 255, 0.12), transparent 34%),
+        radial-gradient(ellipse at 82% 18%, rgba(57, 255, 157, 0.08), transparent 32%),
+        radial-gradient(ellipse at 50% 108%, rgba(80, 120, 255, 0.12), transparent 42%);
+      animation: bloomBreathe 7.5s ease-in-out infinite;
+    }
+    .stage-scan {
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(180, 230, 255, 0.035) 0px,
+        rgba(180, 230, 255, 0.035) 1px,
+        transparent 1px,
+        transparent 4px
+      );
+      mix-blend-mode: screen;
+      opacity: 0.28;
+      animation: scanDrift 9s linear infinite;
+    }
+    .stage-pulse {
+      position: absolute;
+      left: 50%;
+      top: 46%;
+      width: min(78vmin, 820px);
+      height: min(78vmin, 820px);
+      transform: translate(-50%, -50%);
+    }
+    .stage-pulse span {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 1px solid rgba(140, 235, 255, 0.28);
+      box-shadow:
+        0 0 28px rgba(51, 230, 255, 0.08),
+        inset 0 0 24px rgba(57, 255, 157, 0.04);
+      animation: ringPulse 6.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+    }
+    .stage-pulse span:nth-child(2) { animation-delay: 2.1s; }
+    .stage-pulse span:nth-child(3) { animation-delay: 4.2s; }
+    .stage-motes {
+      position: absolute;
+      inset: 0;
+    }
+    .stage-motes i {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: #d7fbff;
+      box-shadow: 0 0 10px 3px rgba(120, 230, 255, 0.55);
+      opacity: 0;
+      animation: moteDrift 11s ease-in-out infinite;
+    }
+    .stage-motes i:nth-child(1) { left: 12%; top: 22%; animation-delay: 0s; animation-duration: 13s; }
+    .stage-motes i:nth-child(2) { left: 78%; top: 18%; animation-delay: 1.6s; animation-duration: 10s; background: #c8ffd8; }
+    .stage-motes i:nth-child(3) { left: 88%; top: 58%; animation-delay: 3.2s; animation-duration: 14s; }
+    .stage-motes i:nth-child(4) { left: 18%; top: 72%; animation-delay: 2.4s; animation-duration: 12s; background: #ffe9b0; }
+    .stage-motes i:nth-child(5) { left: 62%; top: 12%; animation-delay: 4.8s; animation-duration: 11s; }
+    .stage-motes i:nth-child(6) { left: 8%; top: 48%; animation-delay: 0.9s; animation-duration: 15s; }
+    .stage-motes i:nth-child(7) { left: 70%; top: 78%; animation-delay: 5.5s; animation-duration: 12.5s; background: #c8ffd8; }
+    .stage-motes i:nth-child(8) { left: 42%; top: 86%; animation-delay: 2.8s; animation-duration: 9.5s; }
+    .stage-grain {
+      position: absolute;
+      inset: -20%;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+      opacity: 0.07;
+      animation: grainShift 0.8s steps(2) infinite;
+    }
+    @keyframes bloomBreathe {
+      0%, 100% { opacity: 0.7; }
+      50% { opacity: 1; }
+    }
+    @keyframes scanDrift {
+      from { transform: translateY(0); }
+      to { transform: translateY(4px); }
+    }
+    @keyframes ringPulse {
+      0% { transform: scale(0.22); opacity: 0.5; }
+      18% { opacity: 0.38; }
+      100% { transform: scale(1.18); opacity: 0; }
+    }
+    @keyframes moteDrift {
+      0% { opacity: 0; transform: translate(0, 8px) scale(0.6); }
+      18% { opacity: 0.9; }
+      50% { opacity: 0.55; transform: translate(18px, -22px) scale(1); }
+      82% { opacity: 0.85; }
+      100% { opacity: 0; transform: translate(-8px, -40px) scale(0.5); }
+    }
+    @keyframes grainShift {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(-2%, 1%); }
+    }
+
     #hud {
       position: fixed;
       top: 0;
@@ -33,6 +143,7 @@
       align-items: start;
       padding: 24px 32px;
       pointer-events: none;
+      transition: opacity 420ms ease;
     }
     #hud.hidden { opacity: 0; pointer-events: none; }
     #hud.in-lobby .hud-center,
@@ -52,21 +163,26 @@
       flex-direction: column;
       align-items: center;
       gap: 4px;
+      animation: logoFloat 5.6s ease-in-out infinite;
+    }
+    @keyframes logoFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-5px); }
     }
     .logo-stack::before {
       content: "";
       position: absolute;
       left: 50%;
-      top: 38%;
-      width: 78%;
-      height: 70%;
+      top: 42%;
+      width: 92%;
+      height: 82%;
       transform: translate(-50%, -50%);
       border-radius: 50%;
       background:
-        radial-gradient(ellipse at 50% 45%, rgba(51, 230, 255, 0.5), transparent 62%),
-        radial-gradient(ellipse at 35% 55%, rgba(180, 70, 255, 0.32), transparent 58%),
-        radial-gradient(ellipse at 68% 48%, rgba(57, 255, 157, 0.28), transparent 55%);
-      filter: blur(14px);
+        radial-gradient(ellipse at 50% 38%, rgba(51, 230, 255, 0.52), transparent 62%),
+        radial-gradient(ellipse at 32% 58%, rgba(180, 70, 255, 0.34), transparent 58%),
+        radial-gradient(ellipse at 70% 48%, rgba(57, 255, 157, 0.28), transparent 55%);
+      filter: blur(16px);
       z-index: -1;
       animation: logoBacklight 3.6s ease-in-out infinite;
       pointer-events: none;
@@ -74,24 +190,16 @@
 
     #logo {
       display: block;
-      width: 108px;
+      width: 118px;
       height: auto;
       user-select: none;
       position: relative;
+      background: transparent;
       filter:
         drop-shadow(0 0 6px rgba(51, 230, 255, 0.95))
         drop-shadow(0 0 16px rgba(180, 80, 255, 0.55))
         drop-shadow(0 0 28px rgba(57, 255, 157, 0.32));
       animation: logoGlow 3.6s ease-in-out infinite;
-    }
-    .wordmark {
-      font-family: "GFS Didot", Didot, "Bodoni MT", serif;
-      font-size: 14px;
-      font-weight: 400;
-      letter-spacing: 0.04em;
-      line-height: 1;
-      color: rgba(244, 251, 255, 0.94);
-      white-space: nowrap;
     }
     @keyframes logoGlow {
       0%, 100% {
@@ -131,6 +239,13 @@
       letter-spacing: 0.14em;
       color: rgba(244, 251, 255, 0.92);
     }
+    #round-label.tick {
+      animation: roundTick 700ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    @keyframes roundTick {
+      0% { opacity: 0; letter-spacing: 0.32em; filter: blur(4px); }
+      100% { opacity: 1; letter-spacing: 0.14em; filter: none; }
+    }
 
     .btn {
       cursor: pointer;
@@ -145,22 +260,48 @@
       padding: 9px 14px;
       border-radius: 999px;
       backdrop-filter: blur(12px);
+      transition:
+        border-color 180ms ease,
+        background 180ms ease,
+        box-shadow 180ms ease,
+        transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
     }
-    .btn:hover { border-color: rgba(120, 230, 255, 0.55); }
+    .btn:hover {
+      border-color: rgba(120, 230, 255, 0.7);
+      background: rgba(16, 32, 48, 0.72);
+      box-shadow: 0 0 22px rgba(51, 230, 255, 0.22);
+      transform: translateY(-1px);
+    }
+    .btn:active { transform: translateY(0) scale(0.97); }
     .btn.ghost { background: transparent; }
 
     .screen {
       position: fixed;
       inset: 0;
       z-index: 30;
-      display: none;
+      display: flex;
       align-items: stretch;
       justify-content: center;
       padding: 48px 32px;
       background: rgba(5, 6, 10, 0.72);
       backdrop-filter: blur(16px);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 380ms ease, visibility 380ms ease;
     }
-    .screen.open { display: flex; }
+    .screen.open {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+    .screen.open .panel {
+      animation: panelIn 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    @keyframes panelIn {
+      from { opacity: 0; transform: translateY(18px) scale(0.985); }
+      to { opacity: 1; transform: none; }
+    }
 
     .panel {
       width: min(920px, 100%);
@@ -213,6 +354,10 @@
       font-size: 15px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.04);
     }
+    #leaderboard-screen tbody tr {
+      animation: lbRowIn 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      animation-delay: calc(var(--i, 0) * 45ms);
+    }
     #leaderboard-screen tbody tr:nth-child(1) td { color: #fff6d6; }
     #leaderboard-screen tbody tr:nth-child(2) td { color: #e8f4ff; }
     #leaderboard-screen tbody tr:nth-child(3) td { color: #d7ffe8; }
@@ -221,8 +366,8 @@
       font-size: 18px;
       width: 64px;
     }
-    #leaderboard-screen .score { text-align: right; }
-    #leaderboard-screen th.score { text-align: right; }
+    #leaderboard-screen .weight { text-align: right; }
+    #leaderboard-screen th.weight { text-align: right; }
     #leaderboard-screen .rank {
       width: 56px;
       color: rgba(180, 230, 255, 0.4);
@@ -246,29 +391,61 @@
       background: rgba(6, 8, 14, 0.58);
       backdrop-filter: blur(18px);
       pointer-events: none;
+      overflow: hidden;
+      transform: translateY(0);
+      transition: opacity 420ms ease, transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    #leaderboard::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: linear-gradient(
+        180deg,
+        transparent 0%,
+        rgba(120, 230, 255, 0.07) 50%,
+        transparent 100%
+      );
+      background-size: 100% 220%;
+      animation: lbScan 5.4s linear infinite;
+      pointer-events: none;
+    }
+    #leaderboard::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      box-shadow: inset 0 0 0 1px rgba(120, 230, 255, 0.08);
+      pointer-events: none;
+    }
+    @keyframes lbScan {
+      from { background-position: 0 -80%; }
+      to { background-position: 0 180%; }
     }
     #leaderboard.hidden,
-    #leaderboard.in-lobby { opacity: 0; }
+    #leaderboard.in-lobby {
+      opacity: 0;
+      transform: translateY(14px);
+    }
     .lb-head {
       display: flex;
       align-items: baseline;
-      justify-content: space-between;
-      gap: 12px;
+      justify-content: flex-start;
+      gap: 10px;
       margin-bottom: 10px;
       padding-bottom: 8px;
       border-bottom: 1px solid rgba(120, 230, 255, 0.12);
     }
-    .lb-head h2 {
+    .lb-head h2,
+    .lb-kicker {
       font-family: "GFS Didot", Didot, serif;
       font-size: 18px;
       font-weight: 400;
       letter-spacing: 0.08em;
+      color: inherit;
     }
     .lb-kicker {
-      font-size: 10px;
-      letter-spacing: 0.28em;
-      text-transform: uppercase;
-      color: rgba(180, 230, 255, 0.5);
+      text-transform: none;
     }
     #lb-body {
       list-style: none;
@@ -277,16 +454,26 @@
     }
     .lb-row {
       display: grid;
-      grid-template-columns: 28px 36px minmax(0, 1fr) auto;
+      grid-template-columns: 36px minmax(0, 1fr) auto;
       align-items: center;
       gap: 8px;
       min-height: 34px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      animation: lbRowIn 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      animation-delay: calc(var(--i, 0) * 70ms);
+    }
+    .lb-row.no-enter { animation: none; }
+    @keyframes lbRowIn {
+      from { opacity: 0; transform: translateX(-12px); }
+      to { opacity: 1; transform: none; }
     }
     .lb-row:last-child { border-bottom: none; }
     .lb-row:nth-child(1) { color: #fff6d6; }
     .lb-row:nth-child(2) { color: #e8f4ff; }
     .lb-row:nth-child(3) { color: #d7ffe8; }
+    .lb-row:nth-child(1) .rank {
+      text-shadow: 0 0 10px rgba(255, 230, 160, 0.45);
+    }
     .lb-empty {
       padding: 10px 0 6px;
       font-size: 13px;
@@ -294,11 +481,6 @@
       color: rgba(180, 230, 255, 0.42);
     }
     .rank {
-      font-size: 11px;
-      letter-spacing: 0.16em;
-      color: rgba(180, 230, 255, 0.42);
-    }
-    .num {
       font-family: "GFS Didot", Didot, serif;
       font-size: 18px;
       letter-spacing: 0.02em;
@@ -310,64 +492,126 @@
       font-size: 14px;
       color: inherit;
     }
-    .score {
+    .weight {
       font-variant-numeric: tabular-nums;
       letter-spacing: 0.06em;
       font-size: 14px;
       text-align: right;
     }
+    .lb-row.weight-up .weight {
+      animation: weightFlash 700ms ease;
+    }
+    @keyframes weightFlash {
+      0% { transform: scale(1); filter: brightness(1); }
+      30% { transform: scale(1.12); filter: brightness(1.8); text-shadow: 0 0 14px rgba(120, 230, 255, 0.9); }
+      100% { transform: scale(1); filter: brightness(1); }
+    }
 
     #clue-screen {
-      padding: 36px 56px 48px;
+      padding: 0;
+      align-items: stretch;
+      justify-content: stretch;
     }
-    #clue-screen .panel {
-      width: min(1080px, 100%);
+    #clue-screen .clue-layout {
+      position: relative;
+      width: 100%;
       height: 100%;
-      max-height: none;
-      margin: 0 auto;
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-      gap: 0;
     }
-    #clue-screen .panel-head {
-      margin-bottom: 0;
-    }
-    #clue-title {
+    #clue-round {
+      position: absolute;
+      top: 28px;
+      left: 36px;
+      z-index: 2;
+      margin: 0;
       font-family: "GFS Didot", Didot, serif;
-      font-size: clamp(36px, 6vw, 72px);
+      font-size: clamp(22px, 2.4vw, 34px);
       font-weight: 400;
-      align-self: center;
-      justify-self: center;
-      text-align: center;
-      line-height: 1.15;
+      line-height: 1;
+      letter-spacing: 0.14em;
+      color: rgba(244, 251, 255, 0.92);
+      white-space: nowrap;
     }
-    .clue-bottom {
+    .screen.open #clue-round {
+      animation: roundTick 700ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    #clue-word {
+      position: absolute;
+      left: 36px;
+      top: 72px;
+      z-index: 2;
+      margin: 0;
+      font-family: "GFS Didot", Didot, serif;
+      font-size: clamp(13px, 1.3vw, 16px);
+      font-weight: 400;
+      line-height: 1;
+      letter-spacing: 0.42em;
+      text-transform: uppercase;
+      color: rgba(180, 230, 255, 0.55);
+    }
+    .screen.open #clue-word {
+      animation: titleReveal 780ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    @keyframes titleReveal {
+      from { opacity: 0; filter: blur(8px); letter-spacing: 0.7em; }
+      to { opacity: 1; filter: none; letter-spacing: 0.42em; }
+    }
+    #clue-screen .clue-chrome {
+      position: absolute;
+      top: 24px;
+      right: 32px;
+      z-index: 2;
       display: flex;
-      flex-direction: column;
       align-items: center;
-      gap: 20px;
-      padding-bottom: 2vh;
+      gap: 12px;
+      pointer-events: auto;
+    }
+    #clue-timer {
+      min-width: 120px;
+      padding: 8px 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(125, 255, 176, 0.35);
+      background: rgba(7, 24, 18, 0.72);
+      font-family: "GFS Didot", Didot, serif;
+      font-size: 28px;
+      letter-spacing: 0.04em;
+      color: #7dffb0;
       text-align: center;
+      font-variant-numeric: tabular-nums;
     }
-    #clue-text {
-      max-width: 640px;
-      font-size: 18px;
-      line-height: 1.7;
-      color: rgba(220, 240, 255, 0.72);
+    #clue-timer[hidden] { display: none; }
+    #clue-timer.urgent {
+      border-color: rgba(255, 90, 168, 0.5);
+      color: #ff8ec4;
     }
-    #clue-media:empty { display: none; }
-    #clue-media img {
-      max-height: min(28vh, 280px);
-      max-width: min(70vw, 640px);
-      border-radius: 12px;
+    #clue-media {
+      position: absolute;
+      inset: 72px 48px 36px;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #clue-media img,
+    #clue-media video {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      border-radius: 28px;
+      border: 1px solid rgba(246, 239, 228, 0.12);
+      box-shadow:
+        0 28px 80px rgba(0, 0, 0, 0.55),
+        0 0 80px rgba(51, 230, 255, 0.12);
+      object-fit: contain;
+      background: #000;
     }
     #clue-media audio { width: min(480px, 70vw); }
-    #clue-media figcaption {
-      margin-top: 10px;
-      font-size: 11px;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: rgba(180, 230, 255, 0.45);
+    @media (max-width: 720px) {
+      #clue-round { top: 16px; left: 16px; }
+      #clue-word { top: 52px; left: 16px; }
+      #clue-screen .clue-chrome { top: 12px; right: 14px; }
+      #clue-media { inset: 64px 16px 20px; }
     }
 
     .dock-btn {
@@ -377,7 +621,8 @@
       z-index: 25;
       pointer-events: auto;
     }
-    .dock-btn.hidden {
+    .dock-btn.hidden,
+    #clue-btn.hidden {
       display: none;
     }
     #demo-screen {
@@ -405,10 +650,20 @@
     }
     #demo-fallback.show { display: block; }
 
+    @media (prefers-reduced-motion: reduce) {
+      .stage-bloom, .stage-scan, .stage-pulse span, .stage-motes i, .stage-grain,
+      #logo, .logo-stack, .logo-stack::before, #leaderboard::before,
+      .lb-row, .lb-row.weight-up .weight, #round-label.tick,
+      .screen.open .panel, .screen.open #clue-round, .screen.open #clue-word {
+        animation: none !important;
+      }
+      .btn { transition: none; }
+      .screen { transition: none; }
+    }
+
     @media (max-width: 720px) {
       #hud { padding: 12px 14px; }
       #logo { width: 88px; }
-      .wordmark { font-size: 12px; }
       .hud-right { gap: 6px; padding-top: 2px; }
       .hud-center { padding-top: 4px; }
       .btn { padding: 8px 10px; letter-spacing: 0.1em; }
@@ -433,19 +688,32 @@
 </head>
 <body>
   <div id="root"></div>
+  <div class="stage-fx" aria-hidden="true">
+    <div class="stage-vignette"></div>
+    <div class="stage-bloom"></div>
+    <div class="stage-scan"></div>
+    <div class="stage-pulse" aria-hidden="true">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+    <div class="stage-motes" aria-hidden="true">
+      <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+    </div>
+    <div class="stage-grain"></div>
+  </div>
 
   <header id="hud" class="in-lobby">
     <div class="hud-left">
       <div class="logo-stack">
-        <img id="logo" src="./assets/logo-mark.png" alt="" />
-        <span class="wordmark">&lt;Coding Club&gt;</span>
+        <img id="logo" src="./assets/cc-new-logo.png?v=2" alt="Coding Club 10 years" />
       </div>
     </div>
     <div class="hud-center">
       <h2 id="round-label">Round 0</h2>
     </div>
     <div class="hud-right">
-      <button id="clue-btn" class="btn" type="button">Play clue</button>
+      <button id="clue-btn" class="btn hidden" type="button">Play clue</button>
     </div>
   </header>
 
@@ -458,19 +726,14 @@
   </aside>
 
   <section id="clue-screen" class="screen" aria-hidden="true">
-    <div class="panel">
-      <div class="panel-head">
-        <div>
-          <h1 id="clue-round">Round 0</h1>
-          <p>Clue</p>
-        </div>
-        <button id="clue-back" class="btn ghost" type="button">Back</button>
+    <div class="clue-layout">
+      <h1 id="clue-round">Round 0</h1>
+      <div class="clue-chrome">
+        <div id="clue-timer" hidden>30</div>
+        <button id="clue-back" class="btn ghost" type="button" aria-label="Back to stage">←</button>
       </div>
-      <h2 id="clue-title"></h2>
-      <div class="clue-bottom">
-        <figure id="clue-media"></figure>
-        <p id="clue-text"></p>
-      </div>
+      <p id="clue-word">CLUE</p>
+      <figure id="clue-media"></figure>
     </div>
   </section>
 
@@ -492,8 +755,8 @@
             <tr>
               <th class="rank">Rank</th>
               <th class="num">No.</th>
-              <th>Cluster</th>
-              <th class="score">Score</th>
+              <th>Team</th>
+              <th class="weight">Weight</th>
             </tr>
           </thead>
           <tbody id="lb-full-body"></tbody>
@@ -518,5 +781,6 @@
 
   <script type="module" src="./index.js"></script>
   <script type="module" src="./engine-bridge.js"></script>
+  <script type="module" src="./stage-cursor.js"></script>
 </body>
 </html>

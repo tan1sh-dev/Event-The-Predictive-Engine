@@ -12,7 +12,7 @@ new THREE.TextureLoader().load('./assets/stage-bg.png', (texture) => {
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
   scene.background = texture;
-  scene.backgroundIntensity = 0.85;
+  scene.backgroundIntensity = 1.05;
 });
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -25,7 +25,7 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
+renderer.toneMappingExposure = 1.38;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const root = document.getElementById('root') ?? document.body;
@@ -38,14 +38,14 @@ pmrem.dispose();
 const clock = new THREE.Clock();
 
 // ---------- Lighting ----------
-const ambient = new THREE.AmbientLight(0x1a2340, 0.55);
+const ambient = new THREE.AmbientLight(0x1a2340, 0.78);
 scene.add(ambient);
 
-const keyLight = new THREE.DirectionalLight(0x6fd8ff, 1.15);
+const keyLight = new THREE.DirectionalLight(0x6fd8ff, 1.4);
 keyLight.position.set(10, 15, 10);
 scene.add(keyLight);
 
-const fillLight = new THREE.DirectionalLight(0x39ff9d, 0.35);
+const fillLight = new THREE.DirectionalLight(0x39ff9d, 0.5);
 fillLight.position.set(-8, 6, 8);
 scene.add(fillLight);
 
@@ -53,7 +53,7 @@ const rimLight = new THREE.DirectionalLight(0x3355ff, 0.55);
 rimLight.position.set(-12, -6, -10);
 scene.add(rimLight);
 
-const hubLight = new THREE.PointLight(0x66e0ff, 18, 36, 2);
+const hubLight = new THREE.PointLight(0x66e0ff, 24, 40, 2);
 hubLight.position.set(0, 0, 0);
 scene.add(hubLight);
 
@@ -72,10 +72,10 @@ function createStarfield() {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   const mat = new THREE.PointsMaterial({
-    color: 0x88aaff,
-    size: 0.28,
+    color: 0xa8c8ff,
+    size: 0.34,
     transparent: true,
-    opacity: 0.18,
+    opacity: 0.34,
     depthWrite: false,
     sizeAttenuation: true,
   });
@@ -83,7 +83,8 @@ function createStarfield() {
   points.name = 'starfield';
   return points;
 }
-scene.add(createStarfield());
+const starfield = createStarfield();
+scene.add(starfield);
 
 function createGlowTexture() {
   const size = 128;
@@ -172,6 +173,32 @@ const hubWire = new THREE.Mesh(hubWireGeo, hubWireMat);
 hubWire.name = 'hubWireframe';
 networkGroup.add(hubWire);
 
+const hubRings = new THREE.Group();
+hubRings.name = 'hubRings';
+networkGroup.add(hubRings);
+
+function makeHubRing(radius, color, tilt) {
+  const geo = new THREE.TorusGeometry(radius, 0.016, 8, 160);
+  const mat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.48,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = tilt;
+  return mesh;
+}
+const hubRingA = makeHubRing(3.05, 0x33e6ff, Math.PI / 2.12);
+const hubRingB = makeHubRing(3.48, 0x39ff9d, Math.PI / 2.55);
+const hubRingC = makeHubRing(2.62, 0x7aa8ff, Math.PI / 1.82);
+hubRings.add(hubRingA, hubRingB, hubRingC);
+
+const packetGroup = new THREE.Group();
+packetGroup.name = 'packetGroup';
+networkGroup.add(packetGroup);
+
 // ---------- Clusters ----------
 const CLUSTER_NAMES = [
   "Atlas", "Nova", "Helix", "Nexus", "Prism",
@@ -185,8 +212,22 @@ function clusterName(index) {
   return CLUSTER_NAMES[index] ?? `Node ${index + 1}`;
 }
 
-function clusterScore(weight) {
-  return Math.round(Math.max(0, Number(weight) || 0) * 1000);
+function formatWeight(weight) {
+  const w = Math.max(0, Number(weight) || 0);
+  return w.toFixed(2);
+}
+
+function updateClusterMeta(cluster) {
+  if (!cluster || typeof cluster.number !== "number") return false;
+  const mesh = clusters.find((c) => c.userData.id === cluster.number);
+  if (!mesh) return false;
+  const teamName = cluster.team?.teamName?.trim() ?? "";
+  mesh.userData.displayName = teamName;
+  mesh.userData.hasTeam = Boolean(teamName);
+  if (typeof cluster.weight === "number") {
+    updateClusterWeight(cluster.number, cluster.weight);
+  }
+  return true;
 }
 const clusters = [];
 const clusterGroup = new THREE.Group();
@@ -235,6 +276,41 @@ function clearClusters() {
     edge.material.dispose();
     edgeGroup.remove(edge);
   }
+  clearPackets();
+}
+
+function clearPackets() {
+  while (packetGroup.children.length) {
+    const packet = packetGroup.children[0];
+    packet.material.dispose();
+    packetGroup.remove(packet);
+  }
+}
+
+function rebuildPackets() {
+  clearPackets();
+  for (const mesh of clusters) {
+    const count = 2;
+    for (let i = 0; i < count; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: glowTexture,
+        color: mesh.userData.neonColor,
+        transparent: true,
+        opacity: 0.8,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const sprite = new THREE.Sprite(mat);
+      sprite.scale.set(0.5, 0.5, 1);
+      sprite.userData = {
+        clusterId: mesh.userData.id,
+        t: i / count + Math.random() * 0.35,
+        baseSpeed: 0.22 + Math.random() * 0.18,
+        speed: 0.22 + Math.random() * 0.18,
+      };
+      packetGroup.add(sprite);
+    }
+  }
 }
 
 function rebuildClusters(count) {
@@ -279,23 +355,22 @@ function rebuildClusters(count) {
     mesh.userData = {
       id,
       clusterId: `Cluster_${id}`,
-      displayName: clusterName(i),
+      displayName: "",
+      hasTeam: false,
       baseY: basePos.y,
-      currentScale: 1,
-      targetScale: 1,
-      currentEmissive: 1.1,
-      targetEmissive: 1.1,
-      weight: 0.5,
-      animStart: 0,
-      animDuration: 0.5,
-      fromScale: 1,
-      fromEmissive: 1.1,
+      weight: 1,
+      fromWeight: 0,
+      displayWeight: 0,
+      animStart: clock.getElapsedTime() + i * 0.055,
+      animDuration: 0.72,
+      burst: 0,
       floatOffset: Math.random() * Math.PI * 2,
       floatSpeed: 0.4 + Math.random() * 0.3,
       neonColor,
     };
     clusterGroup.add(mesh);
     clusters.push(mesh);
+    mesh.scale.setScalar(0);
 
     const haloMat = new THREE.SpriteMaterial({
       map: glowTexture,
@@ -306,7 +381,7 @@ function rebuildClusters(count) {
       blending: THREE.AdditiveBlending,
     });
     const halo = new THREE.Sprite(haloMat);
-    halo.scale.set(2.2, 2.2, 1);
+    halo.scale.set(0.01, 0.01, 1);
     halo.name = `Cluster_${id}_halo`;
     mesh.add(halo);
 
@@ -329,19 +404,26 @@ function rebuildClusters(count) {
       new THREE.Vector3(0, 0, 0),
       basePos.clone(),
     ]);
+    const baseEdge = visualsFromWeight(1);
     const edgeMat = new THREE.LineBasicMaterial({
       color: neonColor,
       transparent: true,
-      opacity: 0.45,
+      opacity: baseEdge.edgeOpacity,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
     const edge = new THREE.Line(edgeGeo, edgeMat);
     edge.name = `Edge_${id}`;
-    edge.userData = { clusterId: id, targetOpacity: 0.45 };
+    edge.userData = {
+      clusterId: id,
+      targetOpacity: baseEdge.edgeOpacity,
+      displayOpacity: baseEdge.edgeOpacity,
+      baseColor: neonColor.clone(),
+    };
     edgeGroup.add(edge);
   }
 
+  rebuildPackets();
   renderLeaderboard();
 }
 
@@ -351,10 +433,27 @@ function easeOutCubic(x) {
   return 1 - Math.pow(1 - x, 3);
 }
 
+/** Size, glow, and link strength track the cluster's live AdaBoost weight. */
+function visualsFromWeight(weight) {
+  const w = Math.max(0, Number(weight) || 0);
+  // Weight 1 = standard readable node. Higher weights grow size/glow/link strength
+  // linearly; soft caps keep late-round boosts from blowing out the topology.
+  return {
+    scale: THREE.MathUtils.clamp(0.58 + 0.42 * w, 0.5, 2.15),
+    emissive: THREE.MathUtils.clamp(0.55 + 1.15 * w, 0.35, 3.8),
+    haloOpacity: THREE.MathUtils.clamp(0.18 + 0.24 * w, 0.1, 0.92),
+    haloWorld: THREE.MathUtils.clamp(1.6 + 1.2 * w, 1.2, 6.2),
+    edgeOpacity: THREE.MathUtils.clamp(0.22 + 0.38 * w, 0.1, 0.95),
+    edgeBoost: THREE.MathUtils.clamp(0.55 + 0.45 * w, 0.4, 1.85),
+    packetSpeed: THREE.MathUtils.clamp(0.18 + 0.22 * w, 0.14, 0.85),
+    packetSize: THREE.MathUtils.clamp(0.85 + 0.35 * w, 0.7, 1.9),
+  };
+}
+
 /**
  * Smoothly scale and glow a cluster by weight.
  * @param {number|string} clusterId  1–N or "Cluster_1" … "Cluster_N"
- * @param {number} newWeight         typically 0–1 (values up to 2 are allowed)
+ * @param {number} newWeight         actual AdaBoost weight (1 at start)
  */
 function updateClusterWeight(clusterId, newWeight) {
   const numericId =
@@ -368,20 +467,21 @@ function updateClusterWeight(clusterId, newWeight) {
     return false;
   }
 
-  const w = Math.max(0, Math.min(2, Number(newWeight)));
+  const w = Math.max(0, Number(newWeight) || 0);
   const ud = mesh.userData;
+  const changed = Math.abs((ud.weight ?? 0) - w) > 0.0005;
 
-  ud.fromScale = ud.currentScale;
-  ud.fromEmissive = ud.currentEmissive;
-  ud.targetScale = 0.7 + w * 0.9;
-  ud.targetEmissive = 0.4 + w * 2.6;
-  ud.animStart = clock.getElapsedTime();
-  ud.animDuration = 0.5;
+  ud.fromWeight = ud.displayWeight ?? ud.weight ?? 0;
   ud.weight = w;
+  ud.animStart = clock.getElapsedTime();
+  ud.animDuration = 0.55;
+  ud.burst = changed ? 0.35 : 0;
 
   const edge = edgeGroup.children.find((e) => e.userData.clusterId === numericId);
   if (edge) {
-    edge.userData.targetOpacity = 0.25 + w * 0.65;
+    const vis = visualsFromWeight(w);
+    edge.userData.targetOpacity = vis.edgeOpacity;
+    edge.userData.targetBoost = vis.edgeBoost;
   }
 
   renderLeaderboard();
@@ -391,37 +491,52 @@ function updateClusterWeight(clusterId, newWeight) {
 
 function getLeaderboard() {
   return clusters
+    .filter((mesh) => mesh.userData.hasTeam && String(mesh.userData.displayName ?? "").trim())
     .map((mesh) => {
       const { id, displayName, weight } = mesh.userData;
       return {
         number: id,
         name: displayName,
-        weight,
-        score: clusterScore(weight),
+        weight: Number(weight) || 0,
       };
     })
-    .sort((a, b) => b.score - a.score || a.number - b.number);
+    .sort((a, b) => b.weight - a.weight || a.number - b.number);
 }
+
+let lastMiniSig = "";
+const lastMiniWeights = new Map();
 
 function renderMiniLeaderboard() {
   const body = document.getElementById("lb-body");
   if (!body) return;
   const top = getLeaderboard().slice(0, 5);
   if (!top.length) {
-    body.innerHTML = `<li class="lb-empty">Waiting for nodes</li>`;
+    lastMiniSig = "";
+    lastMiniWeights.clear();
+    body.innerHTML = `<li class="lb-empty">Waiting for teams</li>`;
     return;
   }
+  const sig = top.map((row) => `${row.number}:${row.name}`).join("|");
+  const animateIn = sig !== lastMiniSig;
+  lastMiniSig = sig;
   body.innerHTML = top
-    .map(
-      (row, index) => `
-      <li class="lb-row">
+    .map((row, index) => {
+      const prev = lastMiniWeights.get(row.number);
+      const changed = prev !== undefined && Math.abs(prev - row.weight) > 0.0005;
+      lastMiniWeights.set(row.number, row.weight);
+      const cls = `lb-row${changed ? " weight-up" : ""}${animateIn ? "" : " no-enter"}`;
+      return `
+      <li class="${cls}" style="--i:${index}">
         <span class="rank">${String(index + 1).padStart(2, "0")}</span>
-        <span class="num">${String(row.number).padStart(2, "0")}</span>
         <span class="lb-name">${row.name}</span>
-        <span class="score">${row.score.toLocaleString("en-US")}</span>
-      </li>`
-    )
+        <span class="weight">${formatWeight(row.weight)}</span>
+      </li>`;
+    })
     .join("");
+  const present = new Set(top.map((row) => row.number));
+  for (const key of [...lastMiniWeights.keys()]) {
+    if (!present.has(key)) lastMiniWeights.delete(key);
+  }
 }
 
 function renderFullLeaderboard() {
@@ -429,17 +544,17 @@ function renderFullLeaderboard() {
   if (!body) return;
   const rows = getLeaderboard();
   if (!rows.length) {
-    body.innerHTML = `<tr class="lb-empty-row"><td colspan="4">Waiting for nodes</td></tr>`;
+    body.innerHTML = `<tr class="lb-empty-row"><td colspan="4">Waiting for teams</td></tr>`;
     return;
   }
   body.innerHTML = rows
     .map(
       (row, index) => `
-      <tr>
+      <tr style="--i:${index}">
         <td class="rank">${String(index + 1).padStart(2, "0")}</td>
         <td class="num">${row.number}</td>
         <td>${row.name}</td>
-        <td class="score">${row.score.toLocaleString("en-US")}</td>
+        <td class="weight">${formatWeight(row.weight)}</td>
       </tr>`
     )
     .join("");
@@ -467,32 +582,98 @@ window.addEventListener("keydown", (event) => {
 
 const ROUND_CLUES = {
   R0: {
-    title: "Warm-up",
-    body: "This round teaches the vote + wager flow. Your cluster's weight will not carry forward.",
+    title: "Main character energy",
+    body: [
+      "Lock screen · 2:17 AM · 47 unread",
+      "",
+      '• Spotify — "Main Character Era" · playing · 2h 41m',
+      "• Blinkit — Order delivered: Maggi + cold coffee",
+      "• LinkedIn — Someone viewed your profile (it was you)",
+      '• WhatsApp — Mom: "beta call back" (left on read · 6h)',
+      '• Calendar — "Start assignment" · overdue by 4 days',
+      "• Instagram — Your story got 3 views (all from the same person)",
+      '• Notes — "touch grass after midterms (real this time)"',
+      "",
+      "Practice round — weights do not carry forward.",
+    ].join("\n"),
+    media: { type: "screenshot", src: "/media/r0-lockscreen.png", caption: "Lock screen · 2:17 AM" },
   },
   R1: {
-    title: "Image clue",
-    body: "A projected purchase history (tech, fitness, skincare, late-night food). Anchor your first read on the volunteer's lifestyle.",
-    media: { type: "image", src: "/media/r1-purchases.png", caption: "Last purchases" },
+    title: "Last purchases",
+    body: [
+      "A mix of fitness, tech, skincare, and late-night food:",
+      "",
+      "• ESP32 microcontroller",
+      "• ChatGPT Plus / Claude Premium subscription",
+      "• USB-C to USB-A cable",
+      "• 100-pack of copper wires",
+      "• Elite gym membership renewal",
+      "• Premium hair/skin serum",
+      "• Late-night Blinkit order — Buldak spicy Korean noodles",
+      "• Zomato order from California Burrito",
+    ].join("\n"),
+    media: { type: "image", src: "/media/r1-purchases.png", caption: "Personal ledger · last 7 days" },
   },
   R2: {
-    title: "Audio clue",
-    body: "A voice-note clip of the volunteer submitting copied code without understanding it.",
-    media: { type: "audio", src: "/media/r2-vibe.mp3", caption: "Voice note" },
+    title: "Voice note",
+    body: [
+      "Played at 1:30 AM.",
+      "",
+      'Volunteer: "Hey bro, I know it\'s important to learn it, but don\'t waste time starting that lab code from scratch. I found a random solution online that passes the two basic sample tests on the assignment sheet."',
+      "",
+      'The other person: "Oh wait really? Do you know how it works?"',
+      "",
+      'Volunteer: "Dude I honestly have zero clue how the code works, but it showed \'Output: Success\' once on my screen, so I\'m submitting it right now and going to sleep."',
+    ].join("\n"),
+    media: { type: "video", src: "/media/r2-sip.mov", caption: "SIP video · 1:30 AM" },
   },
   R3: {
     title: "Search history",
-    body: "A screenshot of 1 A.M. search history. Decide which data points actually move the profile.",
+    body: [
+      "Recent mobile search history, timestamped at 1 A.M.:",
+      "",
+      "• how to fix posture after 14 hours sitting",
+      "• how much electricity is my gaming PC secretly eating",
+      "• can I pull an all nighter and finish my entire syllabus",
+      "• best playlist for pretending I'm productive",
+      "• dominos cheese burst near me open late",
+      "• C pointers explained like I'm five before I lose my mind",
+    ].join("\n"),
     media: { type: "screenshot", src: "/media/r3-search.png", caption: "1 A.M. searches" },
   },
   R4: {
     title: "Two truths, one lie",
-    body: "Three stated facts from the volunteer. One is fabricated.",
+    body: [
+      "Three stated facts from the mystery volunteer. Two are absolute facts. One is a complete fabrication.",
+      "",
+      '1. "I managed an 8.2 CGPA last semester despite not even solving previous-year papers."',
+      '2. "I haven\'t used a calendar or planner for my academic deadlines since the first week of the semester."',
+      '3. "I can work anywhere; I never waste time setting up a comfortable vibe or putting on some music, I just sit in silence and grind."',
+    ].join("\n"),
+    media: { type: "image", src: "/media/r4-lie.png", caption: "Three claims · find the lie" },
   },
   R5: {
-    title: "Conflicting artifacts",
-    body: "Browser tabs showing startup / Figma / YC ambition next to a wall of failing GitHub CI runs.",
-    media: { type: "screenshot", src: "/media/r5-tabs.png", caption: "Vision vs. CI" },
+    title: "Open tabs",
+    body: [
+      "A projected screenshot of their browser window:",
+      "",
+      'Tab 1 — The Big Pitch: A polished Canva presentation titled "PhysioTracker AI – Pitch Deck (Final Draft)" with sleek mockups and a projected ₹10 crore valuation slide.',
+      "",
+      'Tab 2 — The High Hopes: A Google search for "how to apply for Shark Tank India as a college student".',
+      "",
+      "Tab 3 — The Broken Reality: An active VS Code / terminal screen filled with red error text:",
+      "FATAL ERROR: Server crashed. Database connection failed.",
+    ].join("\n"),
+    media: { type: "screenshot", src: "/media/r5-tabs.png", caption: "Pitch deck vs crashing server" },
+  },
+  FINAL: {
+    title: "Latent space",
+    body: "Three candidate deep-work environments. One is the volunteer's real setup. Two are decoys. Study them — the question lands on phones when this look-up ends.",
+    media: {
+      type: "image",
+      src: "/media/final-latent.png",
+      caption: "Three candidate environments — one real, two decoys",
+    },
   },
 };
 
@@ -501,33 +682,75 @@ let currentClue = ROUND_CLUES.R0;
 
 function roundLabel(roundId) {
   if (!roundId) return "Round 0";
-  if (roundId === "FINAL") return "Final";
+  if (roundId === "FINAL") return "Final testing";
   const n = String(roundId).replace(/^R/i, "");
   return `Round ${n}`;
+}
+
+function setRoundLabel(text) {
+  const el = document.getElementById("round-label");
+  if (!el) return;
+  if (el.textContent === text) return;
+  el.textContent = text;
+  el.classList.remove("tick");
+  void el.offsetWidth;
+  el.classList.add("tick");
+}
+
+function isMediaFolderSrc(src) {
+  if (typeof src !== "string" || !src) return false;
+  const path = src.split("?")[0];
+  return path.startsWith("/media/") || path.startsWith("./media/") || path.startsWith("media/");
+}
+
+let clueMediaToken = "";
+let lastClueMediaKey = "";
+
+function notifyClueEnded() {
+  if (typeof window.__notifyClueEnded === "function") window.__notifyClueEnded();
+}
+
+function bindCluePlayback(el) {
+  el.addEventListener("ended", notifyClueEnded);
+  el.addEventListener("error", () => {
+    el.parentElement && (el.parentElement.innerHTML = "");
+  });
+  const play = el.play();
+  if (play && typeof play.catch === "function") play.catch(() => {});
 }
 
 function renderClueMedia(media) {
   const holder = document.getElementById("clue-media");
   if (!holder) return;
+  const key = `${clueMediaToken}|${media?.type ?? ""}|${media?.src ?? ""}`;
+  if (key === lastClueMediaKey && holder.childElementCount > 0) return;
+  lastClueMediaKey = key;
   holder.innerHTML = "";
-  if (!media?.src) return;
+  if (!media?.src || !isMediaFolderSrc(media.src)) return;
   if (media.type === "audio") {
-    holder.innerHTML = `<audio controls src="${media.src}"></audio>${
-      media.caption ? `<figcaption>${media.caption}</figcaption>` : ""
-    }`;
+    holder.innerHTML = `<audio controls autoplay src="${media.src}"></audio>`;
+    const audio = holder.querySelector("audio");
+    if (audio) bindCluePlayback(audio);
     return;
   }
-  holder.innerHTML = `<img src="${media.src}" alt="${media.caption ?? "Clue"}" />${
-    media.caption ? `<figcaption>${media.caption}</figcaption>` : ""
-  }`;
+  if (media.type === "video") {
+    holder.innerHTML = `<video controls playsinline autoplay preload="auto" src="${media.src}"></video>`;
+    const video = holder.querySelector("video");
+    if (video) bindCluePlayback(video);
+    return;
+  }
+  holder.innerHTML = `<img src="${media.src}" alt="" />`;
+  const img = holder.querySelector("img");
+  img?.addEventListener("error", () => {
+    holder.innerHTML = "";
+  });
 }
 
 function renderClueScreen() {
   const label = roundLabel(currentRoundId);
-  document.getElementById("round-label").textContent = label;
-  document.getElementById("clue-round").textContent = label;
-  document.getElementById("clue-title").textContent = currentClue?.title ?? "Clue";
-  document.getElementById("clue-text").textContent = currentClue?.body ?? "";
+  setRoundLabel(label);
+  const roundEl = document.getElementById("clue-round");
+  if (roundEl) roundEl.textContent = label;
   renderClueMedia(currentClue?.media);
 }
 
@@ -537,7 +760,7 @@ const clueBack = document.getElementById("clue-back");
 let clueOpen = false;
 
 function openClue() {
-  if (inLobby) return;
+  if (inLobby || stagePhase !== "clue") return;
   if (demoOpen) closeDemo();
   if (lbOpen) closeLeaderboard();
   renderClueScreen();
@@ -552,15 +775,74 @@ function closeClue() {
   clueScreen.classList.remove("open");
   clueScreen.setAttribute("aria-hidden", "true");
   setHudHidden(false);
-  const audio = clueScreen.querySelector("audio");
-  if (audio) {
-    audio.pause();
-    audio.currentTime = 0;
+  for (const el of clueScreen.querySelectorAll("audio, video")) {
+    el.pause();
+    el.currentTime = 0;
   }
+  const holder = document.getElementById("clue-media");
+  if (holder) holder.innerHTML = "";
+  lastClueMediaKey = "";
 }
 
 clueBtn.addEventListener("click", openClue);
 clueBack.addEventListener("click", closeClue);
+
+const clueTimerEl = document.getElementById("clue-timer");
+let stagePhase = "lobby";
+let stageClock = null;
+
+function formatVoteClock(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
+}
+
+function stageRemainingMs() {
+  if (!stageClock) return null;
+  if (stagePhase === "clue") return stageClock.clueRemainingMs;
+  if (stagePhase === "voting_open" || stagePhase === "final_inference_open") {
+    return stageClock.voteRemainingMs;
+  }
+  return null;
+}
+
+function renderStageTimer() {
+  if (!clueTimerEl) return;
+  const ms = stageRemainingMs();
+  if (ms == null) {
+    clueTimerEl.hidden = true;
+    clueTimerEl.classList.remove("urgent");
+    return;
+  }
+  clueTimerEl.hidden = false;
+  clueTimerEl.textContent = ms <= 0 ? "0:00" : formatVoteClock(ms);
+  clueTimerEl.classList.toggle("urgent", ms <= 5_000);
+}
+
+function armClueTick(snap) {
+  stagePhase = typeof snap?.phase === "string" ? snap.phase : stagePhase;
+  if (snap) {
+    stageClock = {
+      voteDeadlineAt: snap.voteDeadlineAt ?? null,
+      clueDeadlineAt: snap.clueDeadlineAt ?? null,
+      voteRemainingMs:
+        snap.voteDeadlineAt != null && snap.serverTime != null
+          ? Math.max(0, snap.voteDeadlineAt - snap.serverTime)
+          : null,
+      clueRemainingMs:
+        snap.clueDeadlineAt != null && snap.serverTime != null
+          ? Math.max(0, snap.clueDeadlineAt - snap.serverTime)
+          : null,
+    };
+  }
+  renderStageTimer();
+}
+
+window.applyEngineClock = function applyEngineClock(clock) {
+  stageClock = clock ?? null;
+  renderStageTimer();
+};
 
 const demoBtn = document.getElementById("demo-btn");
 const demoScreen = document.getElementById("demo-screen");
@@ -644,7 +926,11 @@ window.applyEngineSnapshot = function applyEngineSnapshot(snap) {
   if (snap.roundId) currentRoundId = snap.roundId;
   else if (snap.phase === "lobby") currentRoundId = "R0";
   if (snap.clue) currentClue = snap.clue;
-  else if (ROUND_CLUES[currentRoundId]) currentClue = ROUND_CLUES[currentRoundId];
+  else if (snap.phase === "clue" && ROUND_CLUES[currentRoundId]) {
+    currentClue = ROUND_CLUES[currentRoundId];
+  } else {
+    currentClue = null;
+  }
   if (typeof snap.phase === "string") {
     setLobbyMode(snap.phase === "lobby");
   }
@@ -653,8 +939,22 @@ window.applyEngineSnapshot = function applyEngineSnapshot(snap) {
   } else if (Array.isArray(snap.clusters)) {
     rebuildClusters(snap.clusters.length);
   }
-  renderClueScreen();
+  if (Array.isArray(snap.clusters)) {
+    for (const cluster of snap.clusters) {
+      updateClusterMeta(cluster);
+    }
+  }
+  clueMediaToken = `${snap.roundId ?? ""}:${snap.clueStartedAt ?? 0}`;
   renderLeaderboard();
+  armClueTick(snap);
+  const showClue = snap.phase === "clue";
+  clueBtn?.classList.toggle("hidden", !showClue);
+  if (showClue) {
+    renderClueScreen();
+    openClue();
+  } else if (clueOpen) {
+    closeClue();
+  }
 };
 
 renderClueScreen();
@@ -697,37 +997,72 @@ function animate() {
   const elapsed = clock.elapsedTime;
 
   networkGroup.position.y = Math.sin(elapsed * 0.5) * 0.35;
-  networkGroup.rotation.y += delta * 0.03;
+  networkGroup.rotation.y += delta * 0.038;
 
-  const hubPulse = 1 + Math.sin(elapsed * 1.2) * 0.03;
+  starfield.rotation.y += delta * 0.006;
+  starfield.rotation.x = Math.sin(elapsed * 0.07) * 0.04;
+  starfield.material.opacity = 0.26 + Math.sin(elapsed * 0.85) * 0.1;
+
+  const hubPulse = 1 + Math.sin(elapsed * 1.2) * 0.045;
   hub.scale.setScalar(hubPulse);
-  hubWire.rotation.y -= delta * 0.08;
-  hubWire.rotation.x += delta * 0.04;
-  hubMat.emissiveIntensity = 1.6 + Math.sin(elapsed * 1.5) * 0.25;
-  hubLight.intensity = 16 + Math.sin(elapsed * 1.5) * 3;
+  hubWire.rotation.y -= delta * 0.12;
+  hubWire.rotation.x += delta * 0.055;
+  hubWireMat.opacity = 0.28 + Math.sin(elapsed * 1.8) * 0.12;
+  hubMat.emissiveIntensity = 1.85 + Math.sin(elapsed * 1.5) * 0.4;
+  hubLight.intensity = 20 + Math.sin(elapsed * 1.5) * 6;
+
+  hubRingA.rotation.z += delta * 0.42;
+  hubRingB.rotation.z -= delta * 0.26;
+  hubRingC.rotation.z += delta * 0.18;
+  hubRingA.rotation.y = Math.sin(elapsed * 0.45) * 0.22;
+  hubRingB.rotation.y = Math.cos(elapsed * 0.32) * 0.18;
+  hubRingC.material.opacity = 0.32 + Math.sin(elapsed * 1.4) * 0.16;
 
   for (const mesh of clusters) {
     const ud = mesh.userData;
-    const animT = ud.animDuration > 0 ? Math.min(1, (elapsed - ud.animStart) / ud.animDuration) : 1;
+    const rawT = ud.animDuration > 0 ? (elapsed - ud.animStart) / ud.animDuration : 1;
+    const animT = Math.min(1, Math.max(0, rawT));
     const eased = easeOutCubic(animT);
-    ud.currentScale = THREE.MathUtils.lerp(ud.fromScale, ud.targetScale, eased);
-    ud.currentEmissive = THREE.MathUtils.lerp(ud.fromEmissive, ud.targetEmissive, eased);
+    ud.displayWeight = THREE.MathUtils.lerp(ud.fromWeight ?? 0, ud.weight ?? 1, eased);
+    ud.burst = Math.max(0, (ud.burst ?? 0) - delta * 2.4);
 
-    mesh.position.y = ud.baseY + Math.sin(elapsed * ud.floatSpeed + ud.floatOffset) * 0.15;
-    mesh.scale.setScalar(ud.currentScale);
-    mesh.material.emissiveIntensity = ud.currentEmissive;
+    const vis = visualsFromWeight(ud.displayWeight);
+    const nodeScale = vis.scale * (1 + ud.burst * 0.05);
+
+    mesh.position.y = ud.baseY + Math.sin(elapsed * ud.floatSpeed + ud.floatOffset) * 0.22;
+    mesh.scale.setScalar(nodeScale);
+    mesh.material.emissiveIntensity = vis.emissive;
 
     const halo = ud.halo;
     if (halo) {
-      halo.material.opacity = 0.2 + Math.min(1, ud.currentEmissive / 3) * 0.45;
-      const haloScale = 1.8 + ud.currentScale * 0.9;
-      halo.scale.set(haloScale, haloScale, 1);
+      halo.material.opacity = vis.haloOpacity;
+      const localHalo = vis.haloWorld / Math.max(nodeScale, 0.001);
+      halo.scale.set(localHalo, localHalo, 1);
     }
 
     if (ud.label) {
-      const inv = 1 / Math.max(ud.currentScale, 0.001);
+      const inv = 1 / Math.max(nodeScale, 0.001);
       ud.label.scale.set(1.35 * inv, 1.35 * inv, 1);
     }
+  }
+
+  for (const packet of packetGroup.children) {
+    const cluster = clusters.find((c) => c.userData.id === packet.userData.clusterId);
+    if (!cluster) continue;
+    const vis = visualsFromWeight(cluster.userData.displayWeight ?? cluster.userData.weight ?? 1);
+    const baseSpeed = packet.userData.baseSpeed ?? packet.userData.speed ?? 0.25;
+    packet.userData.t += baseSpeed * vis.packetSpeed * 1.35 * delta;
+    if (packet.userData.t > 1) packet.userData.t -= 1;
+    const t = packet.userData.t;
+    packet.position.set(
+      cluster.position.x * t,
+      cluster.position.y * t,
+      cluster.position.z * t
+    );
+    const pulse = Math.sin(t * Math.PI);
+    const size = (0.28 + pulse * 0.55) * vis.packetSize;
+    packet.scale.set(size, size, 1);
+    packet.material.opacity = Math.min(1, (0.18 + pulse * 0.82) * vis.edgeBoost);
   }
 
   for (const edge of edgeGroup.children) {
@@ -736,13 +1071,31 @@ function animate() {
       const positions = edge.geometry.attributes.position;
       positions.setXYZ(1, cluster.position.x, cluster.position.y, cluster.position.z);
       positions.needsUpdate = true;
+
+      // Link strength follows the node’s live (animated) weight in real time.
+      const vis = visualsFromWeight(cluster.userData.displayWeight ?? cluster.userData.weight ?? 1);
+      edge.userData.targetOpacity = vis.edgeOpacity;
+      edge.userData.targetBoost = vis.edgeBoost;
     }
     if (edge.userData.targetOpacity !== undefined) {
-      edge.material.opacity = THREE.MathUtils.lerp(
-        edge.material.opacity,
+      edge.userData.displayOpacity = THREE.MathUtils.lerp(
+        edge.userData.displayOpacity ?? edge.userData.targetOpacity,
         edge.userData.targetOpacity,
-        0.08
+        0.1
       );
+    }
+    const boost = edge.userData.targetBoost ?? 1;
+    edge.userData.displayBoost = THREE.MathUtils.lerp(
+      edge.userData.displayBoost ?? boost,
+      boost,
+      0.1
+    );
+    const pulse = 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(elapsed * 3.2 + (edge.userData.clusterId ?? 0)));
+    edge.material.opacity = Math.min(1, (edge.userData.displayOpacity ?? 0.45) * pulse * edge.userData.displayBoost);
+    if (edge.userData.baseColor) {
+      // Brighter link as weight climbs.
+      const lift = THREE.MathUtils.clamp(0.65 + 0.45 * (edge.userData.displayBoost ?? 1), 0.65, 1.6);
+      edge.material.color.copy(edge.userData.baseColor).multiplyScalar(lift);
     }
   }
 

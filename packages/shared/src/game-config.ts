@@ -24,76 +24,106 @@ function q(
 export const ROUNDS: RoundConfig[] = [
   {
     id: "R0",
-    title: "Calibration",
-    theme: "Practice round — weights are discarded",
+    title: "Main character energy",
+    theme: "Vibe check — practice vote + wager; weights discarded",
     calibration: true,
     clue: {
-      title: "Warm-up",
-      body: "This round teaches the vote + wager flow. Your cluster's weight will not carry forward.",
+      title: "Main character energy",
+      body: [
+        "Lock screen · 2:17 AM · 47 unread",
+        "",
+        '• Spotify — "Main Character Era" · playing · 2h 41m',
+        "• Blinkit — Order delivered: Maggi + cold coffee",
+        "• LinkedIn — Someone viewed your profile (it was you)",
+        '• WhatsApp — Mom: "beta call back" (left on read · 6h)',
+        '• Calendar — "Start assignment" · overdue by 4 days',
+        "• Instagram — Your story got 3 views (all from the same person)",
+        '• Notes — "touch grass after midterms (real this time)"',
+        "",
+        "Practice round — weights do not carry forward.",
+      ].join("\n"),
+      media: { type: "screenshot", src: "/media/r0-lockscreen.png", caption: "Lock screen · 2:17 AM" },
     },
     questions: [
-      q("R0", 1, "How many students share one phone in a cluster?", [
-        "1",
-        "3",
-        "5",
-        "10",
+      q("R0", 1, "Based only on this lock screen, what's their actual 2 AM priority?", [
+        "Inbox zero and calling Mom back",
+        "Building a LinkedIn personal brand",
+        "Surviving the night on Maggi, playlists, and denial",
+        "Finally starting the overdue assignment",
       ]),
-      q("R0", 2, "A High Risk wager sets alpha to…", [
-        "0.1",
-        "0.5",
-        "1.0",
-        "1.5",
+      q("R0", 2, "If you had to bet one chip on their next move, what are they most likely to do?", [
+        "Close Spotify and touch grass",
+        "Reply to Mom with a voice note",
+        'Open the assignment… then open Instagram "for one sec"',
+        "Actually finish the Notes app promise",
       ]),
     ],
   },
   {
     id: "R1",
     title: "Their Last Purchases",
-    theme: "Image clue — lifestyle read from a projected purchase history",
+    theme: "Lifestyle read from a projected purchase history",
     calibration: false,
     clue: {
-      title: "Image clue",
-      body: "A projected purchase history (tech, fitness, skincare, late-night food). Anchor your first read on the volunteer's lifestyle.",
-      media: { type: "image", src: "/media/r1-purchases.png", caption: "Last purchases" },
+      title: "Last purchases",
+      body: [
+        "A mix of fitness, tech, skincare, and late-night food:",
+        "",
+        "• ESP32 microcontroller",
+        "• ChatGPT Plus / Claude Premium subscription",
+        "• USB-C to USB-A cable",
+        "• 100-pack of copper wires",
+        "• Elite gym membership renewal",
+        "• Premium hair/skin serum",
+        "• Late-night Blinkit order — Buldak spicy Korean noodles",
+        "• Zomato order from California Burrito",
+      ].join("\n"),
+      media: { type: "image", src: "/media/r1-purchases.png", caption: "Personal ledger · last 7 days" },
     },
     questions: [
-      q("R1", 1, "Which lifestyle lane do the purchases point to first?", [
-        "Optimiser / biohacker",
-        "Campus night-owl",
-        "Aesthetic curator",
-        "Builder / gadget hoarder",
-      ]),
-      q("R1", 2, "What should we NOT overweight from this receipt?", [
-        "A one-off snack at 1 A.M.",
-        "A repeating subscription",
-        "A high-ticket tool they already own",
-        "A gift clearly bought for someone else",
-      ]),
+      q(
+        "R1",
+        1,
+        "Looking at this mix of fitness, tech, skincare, and late-night food, what does their overall spending footprint suggest about how they manage daily college life?",
+        [
+          "They build routines meant to run on their own, but end up reacting to whatever's urgent instead of following the plan.",
+          "They try to keep up long-term routines like the gym and skincare, while also relying on fast, easy options like late-night food orders.",
+          "The recurring purchases look like discipline, but nothing proves they're actually keeping up the routine day to day.",
+          "Spending is balanced enough across categories that no single habit really stands out.",
+        ],
+      ),
     ],
   },
   {
     id: "R2",
     title: "The Vibe Check",
-    theme: "Audio clue — academic habits and reliability",
+    theme: "SIP video clue — academic habits and reliability",
     calibration: false,
     clue: {
-      title: "Audio clue",
-      body: "A voice-note clip of the volunteer submitting copied code without understanding it.",
-      media: { type: "audio", src: "/media/r2-vibe.mp3", caption: "Voice note" },
+      title: "Voice note",
+      body: [
+        "Played at 1:30 AM.",
+        "",
+        'Volunteer: "Hey bro, I know it\'s important to learn it, but don\'t waste time starting that lab code from scratch. I found a random solution online that passes the two basic sample tests on the assignment sheet."',
+        "",
+        'The other person: "Oh wait really? Do you know how it works?"',
+        "",
+        'Volunteer: "Dude I honestly have zero clue how the code works, but it showed \'Output: Success\' once on my screen, so I\'m submitting it right now and going to sleep."',
+      ].join("\n"),
+      media: { type: "video", src: "/media/r2-sip.mov", caption: "SIP video · 1:30 AM" },
     },
     questions: [
-      q("R2", 1, "What does the clip say about how they work under deadline?", [
-        "They ship first and understand later",
-        "They freeze until they fully get it",
-        "They delegate and disappear",
-        "They rewrite everything from scratch",
-      ]),
-      q("R2", 2, "Which archetype is this evidence pulling toward?", [
-        "The Hustler",
-        "The Perfectionist",
-        "The Collaborator",
-        "The Lurker",
-      ]),
+      q(
+        "R2",
+        1,
+        "A professor is choosing this student for a last-minute team project, where the team has very little time and needs someone who can contribute quickly. Based only on what you heard in the voice note, which role would suit this student best?",
+        [
+          "The person who takes an unfinished solution and gets it into a presentable state before the deadline.",
+          "The person who handles the final testing and decides whether the team's solution is reliable enough to submit.",
+          "The person who searches for workable approaches when the team is stuck and needs a result quickly.",
+          "The person who understands the solution well enough to modify it when the requirements suddenly change.",
+        ],
+      ),
     ],
   },
   {
@@ -103,7 +133,16 @@ export const ROUNDS: RoundConfig[] = [
     calibration: false,
     clue: {
       title: "Search history",
-      body: "A screenshot of 1 A.M. search history. Decide which data points actually move the profile.",
+      body: [
+        "Recent mobile search history, timestamped at 1 A.M.:",
+        "",
+        "• how to fix posture after 14 hours sitting",
+        "• how much electricity is my gaming PC secretly eating",
+        "• can I pull an all nighter and finish my entire syllabus",
+        "• best playlist for pretending I'm productive",
+        "• dominos cheese burst near me open late",
+        "• C pointers explained like I'm five before I lose my mind",
+      ].join("\n"),
       media: {
         type: "screenshot",
         src: "/media/r3-search.png",
@@ -111,73 +150,125 @@ export const ROUNDS: RoundConfig[] = [
       },
     },
     questions: [
-      q("R3", 1, "Which search is the strongest signal (not noise)?", [
-        "A meme they opened once",
-        "A repeated 'how does X actually work' query",
-        "An auto-complete of a classmate's name",
-        "A shopping tab they never checked out",
-      ]),
-      q("R3", 2, "After this data, the profile should shift…", [
-        "More ambitious, less disciplined",
-        "More anxious, more thorough",
-        "More social, less technical",
-        "Unchanged — this is all noise",
-      ]),
+      q(
+        "R3",
+        1,
+        "Your model is currently using all six searches. You can permanently remove ONE before making the prediction. Which removal would change the profile the least?",
+        [
+          "Remove the C pointers search",
+          "Remove the electricity search",
+          "Remove the playlist search",
+          "Remove the Domino's search",
+        ],
+      ),
+      q(
+        "R3",
+        2,
+        "Based on these searches, what's their approach when the workload piles up?",
+        [
+          "Stays ahead of deadlines — plans early so nothing turns into a last-minute scramble.",
+          "Locks in on priorities, ditching comfort and fun until the important stuff is done.",
+          "Grinds hard when it counts, but still finds small ways to make it comfortable or fun.",
+          "Takes the path of least resistance — picks convenience over effort whenever possible.",
+        ],
+      ),
     ],
   },
   {
     id: "R4",
-    title: "Imposter Syndrome Test",
-    theme: "Two truths, one lie — spot the fabricated fact, then read the two real ones",
+    title: "Is There a Lie?",
+    theme: "Two truths, one lie — spot the fabricated fact",
     calibration: false,
     clue: {
       title: "Two truths, one lie",
-      body: "Three stated facts from the volunteer. One is fabricated.",
+      body: [
+        "Three stated facts from the mystery volunteer. Two are absolute facts. One is a complete fabrication.",
+        "",
+        '1. "I managed an 8.2 CGPA last semester despite not even solving previous-year papers."',
+        '2. "I haven\'t used a calendar or planner for my academic deadlines since the first week of the semester."',
+        '3. "I can work anywhere; I never waste time setting up a comfortable vibe or putting on some music, I just sit in silence and grind."',
+      ].join("\n"),
+      media: { type: "image", src: "/media/r4-lie.png", caption: "Three claims · find the lie" },
     },
     questions: [
-      q("R4", 1, "Which statement is the lie?", [
-        "Statement 1",
-        "Statement 2",
-        "Statement 3",
+      q("R4", 1, "Which one of these statements is the lie?", [
+        "Fact 1 is the lie",
+        "Fact 2 is the lie",
+        "Fact 3 is the lie",
+        "None of them are lies",
       ]),
-      q("R4", 2, "Taken together, the two real facts support which archetype?", [
-        "Quiet specialist",
-        "Public builder",
-        "Reluctant leader",
-        "Chaos generalist",
-      ]),
+      q(
+        "R4",
+        2,
+        "Why do you think they chose to lie about that specifically, instead of something else on this list?",
+        [
+          "Needing a \"vibe\" to focus feels weak — doesn't match the grindset image they're selling.",
+          "\"I work in silence\" = a clean excuse to skip group sessions and needy teammates.",
+          "Lying here fakes an unshakeable attention span — zero distractions, ever.",
+          "Simplest lie to pick since no one can actually verify someone's study environment.",
+        ],
+      ),
     ],
   },
   {
     id: "R5",
     title: "The Ambition Trap",
-    theme: "Adversarial data — visionary tabs vs failing CI. Final scored round.",
+    theme: "Adversarial data — pitch deck vs a crashing server. Final scored round.",
     calibration: false,
     clue: {
-      title: "Conflicting artifacts",
-      body: "Browser tabs showing startup / Figma / YC ambition next to a wall of failing GitHub CI runs.",
+      title: "Open tabs",
+      body: [
+        "A projected screenshot of their browser window:",
+        "",
+        'Tab 1 — The Big Pitch: A polished Canva presentation titled "PhysioTracker AI – Pitch Deck (Final Draft)" with sleek mockups and a projected ₹10 crore valuation slide.',
+        "",
+        'Tab 2 — The High Hopes: A Google search for "how to apply for Shark Tank India as a college student".',
+        "",
+        "Tab 3 — The Broken Reality: An active VS Code / terminal screen filled with red error text:",
+        "FATAL ERROR: Server crashed. Database connection failed.",
+      ].join("\n"),
       media: {
         type: "screenshot",
         src: "/media/r5-tabs.png",
-        caption: "Vision vs. CI",
+        caption: "Pitch deck vs crashing server",
       },
     },
     questions: [
-      q("R5", 1, "Which reading of the paradox is more honest?", [
-        "Visionary who hasn't shipped yet",
-        "Someone performing ambition",
-        "A burned-out builder mid-debug",
-        "A complete mismatch — ignore the tabs",
-      ]),
-      q("R5", 2, "Going into the final inference, lock which axis?", [
-        "High vision, low follow-through",
-        "High craft, low self-promo",
-        "High grit, messy process",
-        "Still too noisy to call",
-      ]),
+      q(
+        "R5",
+        1,
+        "If you scanned their brain right now, how is their mental effort actually divided?",
+        [
+          "90% Shark Tank daydream, 10% pretending the red error isn't there.",
+          "50% polishing slides, 50% actually trying to fix the crash.",
+          "70% funding anxiety, 30% quietly realizing they can't code their way out.",
+          "100% coding — the deck's just there to look busy while the fix loads.",
+        ],
+      ),
+      q(
+        "R5",
+        2,
+        "Based on their habits and this browser window, who are they really?",
+        [
+          "The Pragmatic Builder — messy process, real results, doesn't care how it looks.",
+          "The Aesthetic Creator — the deck matters more than the database.",
+          "The Chaotic Explorer — no strategy, just chasing whatever's loud that hour.",
+          "The Curated Grinder — real effort, real struggle, but only the polished parts go on display.",
+        ],
+      ),
     ],
   },
 ];
+
+export const FINAL_CLUE: RoundConfig["clue"] = {
+  title: "Latent space",
+  body: "Three candidate deep-work environments. One is the volunteer's real setup. Two are decoys. Study them — the question lands on phones when this look-up ends.",
+  media: {
+    type: "image",
+    src: "/media/final-latent.png",
+    caption: "Three candidate environments — one real, two decoys",
+  },
+};
 
 export const FINAL_QUESTION: Question = q(
   "FINAL",
@@ -185,11 +276,7 @@ export const FINAL_QUESTION: Question = q(
   "Which AI-generated deep-work environment is the volunteer's real one?",
   ["Environment A", "Environment B", "Environment C"],
   {
-    media: {
-      type: "image",
-      src: "/media/final-latent.png",
-      caption: "Three candidate environments — one real, two decoys",
-    },
+    media: FINAL_CLUE.media,
   },
 );
 
@@ -204,5 +291,9 @@ export function getQuestion(
   questionIndex: 1 | 2,
 ): Question {
   if (roundId === "FINAL") return FINAL_QUESTION;
-  return getRound(roundId).questions[questionIndex - 1];
+  const question = getRound(roundId).questions[questionIndex - 1];
+  if (!question) {
+    throw new Error(`No question ${questionIndex} in ${roundId}`);
+  }
+  return question;
 }

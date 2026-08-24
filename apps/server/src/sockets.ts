@@ -16,7 +16,7 @@ type Io = Server<ClientToServerEvents, ServerToClientEvents, Record<string, neve
 type Sock = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 
 function hostPassword(): string {
-  return process.env.HOST_PASSWORD ?? "rvce-engine";
+  return process.env.HOST_PASSWORD ?? "rvce_host";
 }
 
 function requireHost(socket: Sock): HostAck | null {
@@ -34,8 +34,59 @@ function releaseClusterClient(sock: Sock): void {
 }
 
 export function attachSockets(io: Io, engine: GameEngine): void {
+  let voteTimer: ReturnType<typeof setTimeout> | null = null;
+  let clueTimer: ReturnType<typeof setTimeout> | null = null;
+  let clockPulse: ReturnType<typeof setInterval> | null = null;
+
   const save = () => {
     persist(engine).catch((err) => console.error("snapshot save failed", err));
+  };
+
+  const emitClock = () => {
+    io.emit("clock", engine.clock());
+  };
+
+  const armClockPulse = () => {
+    const live =
+      engine.msUntilVoteDeadline() != null || engine.msUntilClueDeadline() != null;
+    if (!live) {
+      if (clockPulse) {
+        clearInterval(clockPulse);
+        clockPulse = null;
+        emitClock();
+      }
+      return;
+    }
+    emitClock();
+    if (!clockPulse) {
+      clockPulse = setInterval(emitClock, 200);
+    }
+  };
+
+  const armVoteTimer = () => {
+    if (voteTimer) {
+      clearTimeout(voteTimer);
+      voteTimer = null;
+    }
+    const remaining = engine.msUntilVoteDeadline();
+    if (remaining == null) return;
+    voteTimer = setTimeout(() => {
+      voteTimer = null;
+      if (engine.expireOpenVote()) broadcast();
+    }, remaining);
+  };
+
+  const armClueTimer = () => {
+    if (clueTimer) {
+      clearTimeout(clueTimer);
+      clueTimer = null;
+    }
+    const remaining = engine.msUntilClueDeadline();
+    if (remaining == null) return;
+    clueTimer = setTimeout(() => {
+      clueTimer = null;
+      if (engine.expireClue()) broadcast();
+    }, remaining);
   };
 
   const broadcast = () => {
@@ -47,14 +98,21 @@ export function attachSockets(io: Io, engine: GameEngine): void {
       clusterCount: snap.clusterCount,
     });
     for (let n = 1; n <= engine.clusterCount; n++) {
-      const view = engine.clusterView(n);
+      const view = engine.clusterView(n, snap);
       const record = engine.getCluster(n);
       if (view && record?.socketId) {
         io.to(record.socketId).emit("clusterView", view);
       }
     }
+    armVoteTimer();
+    armClueTimer();
+    armClockPulse();
     save();
   };
+
+  armVoteTimer();
+  armClueTimer();
+  armClockPulse();
 
   io.on("connection", (socket) => {
     socket.on("join", (payload, cb) => {
@@ -134,9 +192,9 @@ export function attachSockets(io: Io, engine: GameEngine): void {
         return;
       }
       engine.advance();
-      if (engine.step.phase === "weight_update") {
+      if (engine.step.phase === "weight_update" && engine.step.roundId && engine.step.roundId !== "FINAL") {
         io.emit("weightsUpdated", {
-          roundId: engine.step.roundId!,
+          roundId: engine.step.roundId,
           discarded: engine.step.roundId === "R0",
           clusters: engine.snapshot().clusters,
         });
@@ -155,6 +213,43 @@ export function attachSockets(io: Io, engine: GameEngine): void {
         return;
       }
       engine.back();
+      cb({ ok: true });
+      broadcast();
+    });
+
+    socket.on("stageClueEnded", (cb) => {
+      if (socket.data.role !== "stage") {
+        cb?.({ ok: false });
+        return;
+      }
+      if (engine.step.phase !== "clue") {
+        cb?.({ ok: false });
+        return;
+      }
+      if (engine.msUntilClueDeadline() != null) {
+        cb?.({ ok: false });
+        return;
+      }
+      const moved = engine.expireClue();
+      cb?.({ ok: moved });
+      if (moved) broadcast();
+    });
+
+    socket.on("hostPlayRound", (payload, cb) => {
+      const denied = requireHost(socket);
+      if (denied) {
+        cb(denied);
+        return;
+      }
+      const result = engine.playRound(payload.roundId);
+      if (!result.ok) {
+        cb({
+          ok: false,
+          error: result.error,
+          message: result.message,
+        });
+        return;
+      }
       cb({ ok: true });
       broadcast();
     });

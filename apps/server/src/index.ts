@@ -48,6 +48,9 @@ app.get("/stage-static/index.js", (_req, res) => {
 app.get("/stage-static/engine-bridge.js", (_req, res) => {
   res.sendFile(path.join(repoRoot, "engine-bridge.js"));
 });
+app.get("/stage-static/stage-cursor.js", (_req, res) => {
+  res.sendFile(path.join(repoRoot, "stage-cursor.js"));
+});
 app.use("/stage-static/assets", express.static(path.join(repoRoot, "assets")));
 app.use("/media", express.static(path.join(repoRoot, "media")));
 

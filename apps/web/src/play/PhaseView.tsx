@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import {
-  HIGH_WAGER,
-  LOW_WAGER,
   MID_WAGER,
-  WAGER_STEP,
+  clueDurationForRound,
   normalizeWager,
+  voteDurationForRound,
   type ClusterView,
   type PowerUp,
   type Question,
@@ -12,6 +11,8 @@ import {
   type Wager,
 } from "@engine/shared";
 import Pressable from "../components/Pressable.tsx";
+import VoteTimer, { useVoteRemainingMs } from "../components/VoteTimer.tsx";
+import WagerArc from "../components/WagerArc.tsx";
 import WeightOrb from "../components/WeightOrb.tsx";
 
 const LETTER: Record<string, string> = { a: "A", b: "B", c: "C", d: "D" };
@@ -43,6 +44,8 @@ function Media({ src, type, caption }: { src: string; type: string; caption?: st
     <figure className="overflow-hidden rounded-3xl ring-1 ring-white/10">
       {type === "audio" ? (
         <audio className="w-full p-3" controls src={src} />
+      ) : type === "video" ? (
+        <video className="max-h-56 w-full bg-black object-contain" controls playsInline preload="metadata" src={src} />
       ) : (
         <img src={src} alt={caption ?? ""} className="max-h-48 w-full object-cover" />
       )}
@@ -57,7 +60,9 @@ function Media({ src, type, caption }: { src: string; type: string; caption?: st
 
 function WaitCard({ kicker, title, body }: { kicker: string; title: string; body: string }) {
   return (
-    <div className="animate-pop mt-8 rounded-[28px] bg-white/6 p-6 text-center ring-1 ring-white/10">
+    <div className="animate-pop orig-panel mt-8 p-6 text-center">
+      <div className="orig-scanline" aria-hidden />
+      <div className="orig-radar mx-auto mb-4" aria-hidden />
       <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-200/80">{kicker}</p>
       <h2 className="font-display mt-3 text-3xl font-bold">{title}</h2>
       <p className="mt-3 text-sm leading-relaxed text-cream/65">{body}</p>
@@ -67,16 +72,21 @@ function WaitCard({ kicker, title, body }: { kicker: string; title: string; body
 
 function CrowdSplit({ split }: { split: VoteSplitEntry[] }) {
   return (
-    <div className="animate-pop rounded-3xl bg-[#071018]/80 p-4 ring-1 ring-gold/40">
-      <p className="mb-2 text-center text-[11px] font-bold uppercase tracking-[0.28em] text-gold">
+    <div className="animate-pop orig-panel bg-[#071018]/80 p-4 ring-1 ring-gold/40">
+      <p className="mb-3 text-center text-[11px] font-bold uppercase tracking-[0.28em] text-gold">
         Crowd split
       </p>
       {split.map((s) => (
-        <div key={s.optionId} className="mb-1.5 flex items-center justify-between text-sm">
-          <span>
-            {LETTER[s.optionId] ?? s.optionId} · {s.label}
-          </span>
-          <span className="font-extrabold text-gold">{Math.round(s.pct * 100)}%</span>
+        <div key={s.optionId} className="mb-2">
+          <div className="mb-1 flex items-center justify-between text-sm">
+            <span>
+              {LETTER[s.optionId] ?? s.optionId} · {s.label}
+            </span>
+            <span className="font-extrabold text-gold">{Math.round(s.pct * 100)}%</span>
+          </div>
+          <div className="orig-timer-bar">
+            <div className="orig-timer-fill warn" style={{ width: `${Math.max(4, s.pct * 100)}%` }} />
+          </div>
         </div>
       ))}
     </div>
@@ -89,6 +99,7 @@ function VoteForm({
   pendingOption,
   pendingWager,
   split,
+  expired,
   onVote,
 }: {
   question: Question;
@@ -96,6 +107,7 @@ function VoteForm({
   pendingOption: string | null;
   pendingWager: Wager | null;
   split: VoteSplitEntry[] | null;
+  expired: boolean;
   onVote: (optionId: string, wager: Wager | null) => void;
 }) {
   const [option, setOption] = useState<string | null>(pendingOption);
@@ -113,6 +125,7 @@ function VoteForm({
     (!wagerRequired || pendingWager === wager);
 
   const lockIn = () => {
+    if (expired) return;
     if (!option) return;
     if (wagerRequired && wager == null) return;
     onVote(option, wagerRequired ? (normalizeWager(wager) ?? wager) : null);
@@ -128,20 +141,23 @@ function VoteForm({
       {split && <CrowdSplit split={split} />}
 
       <div className="flex flex-col gap-2.5">
-        {question.options.map((opt) => {
+        {question.options.map((opt, i) => {
           const on = option === opt.id;
           return (
             <button
               key={opt.id}
               type="button"
-              onClick={() => setOption(opt.id)}
-              className={`flex items-center gap-3 rounded-2xl px-3 py-3 text-left transition active:scale-[0.98] ${
-                on
-                  ? "bg-cyan/20 ring-2 ring-cyan"
-                  : "bg-white/6 ring-1 ring-white/10"
+              onClick={() => {
+                if (expired) return;
+                setOption(opt.id);
+                if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(8);
+              }}
+              className={`orig-option flex items-center gap-3 rounded-2xl px-3 py-3 text-left ${
+                on ? "is-on" : ""
               }`}
+              style={{ animationDelay: `${i * 0.05}s` }}
             >
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#071018] font-extrabold text-cyan">
+              <span className="orig-option-letter grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#071018] font-extrabold text-cyan">
                 {LETTER[opt.id] ?? opt.id.toUpperCase()}
               </span>
               <span className="text-[15px] font-semibold leading-snug">{opt.label}</span>
@@ -151,7 +167,8 @@ function VoteForm({
       </div>
 
       {wagerRequired && (
-        <div className="rounded-3xl bg-white/6 px-4 py-4 ring-1 ring-white/10">
+        <div className="orig-panel orig-wager-panel px-4 py-4">
+          <div className="orig-scanline" aria-hidden />
           <p className="mb-1 text-center text-[11px] font-bold uppercase tracking-[0.28em] text-cream/45">
             Confidence wager
           </p>
@@ -161,27 +178,14 @@ function VoteForm({
           <p className="mt-1 text-center text-[11px] font-bold uppercase tracking-widest text-cream/50">
             {wager <= 0.7 ? "Low risk" : wager >= 1.3 ? "High risk" : "Mid risk"}
           </p>
-          <input
-            type="range"
-            min={LOW_WAGER}
-            max={HIGH_WAGER}
-            step={WAGER_STEP}
-            value={wager}
-            onChange={(e) => setWager(Number(e.target.value))}
-            className="wager-slider mt-4"
-            aria-label="Confidence wager"
-          />
-          <div className="mt-2 flex justify-between text-[11px] font-bold uppercase tracking-widest text-cream/40">
-            <span className="text-mint">{LOW_WAGER.toFixed(1)}</span>
-            <span className="text-magenta">{HIGH_WAGER.toFixed(1)}</span>
-          </div>
+          <WagerArc value={wager} onChange={setWager} disabled={expired} />
         </div>
       )}
 
       <Pressable
         variant="go"
         className="w-full"
-        disabled={!ready}
+        disabled={!ready || expired}
         onClick={lockIn}
       >
         {lockedIn
@@ -219,6 +223,8 @@ export default function PhaseView({
   const { snapshot } = view;
   const me = snapshot.clusters.find((c) => c.number === view.clusterNumber);
   const question = snapshot.question;
+  const remainingMs = useVoteRemainingMs(snapshot.voteDeadlineAt, snapshot.serverTime, "vote");
+  const clueRemainingMs = useVoteRemainingMs(snapshot.clueDeadlineAt, snapshot.serverTime, "clue");
 
   if (snapshot.phase === "lobby") {
     return (
@@ -230,24 +236,28 @@ export default function PhaseView({
     );
   }
 
-  if (snapshot.phase === "clue" && snapshot.clue) {
+  if (snapshot.phase === "clue") {
+    const voteSecs = Math.round(voteDurationForRound(snapshot.roundId) / 1000);
+    const clueMs = clueDurationForRound(snapshot.roundId);
+    const waitingOnVideo = clueMs == null;
     return (
-      <div className="animate-pop mt-6 flex flex-col gap-4">
-        <p className="text-center text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-200/80">
-          {snapshot.roundTitle ?? snapshot.roundId}
-        </p>
-        <h2 className="font-display text-center text-3xl font-bold">{snapshot.clue.title}</h2>
-        {snapshot.clue.media && (
-          <Media
-            src={snapshot.clue.media.src}
-            type={snapshot.clue.media.type}
-            caption={snapshot.clue.media.caption}
+      <div className="mt-5">
+        {clueRemainingMs != null && clueMs != null && (
+          <VoteTimer
+            remainingMs={clueRemainingMs}
+            totalMs={clueMs}
+            kicker={clueRemainingMs <= 0 ? "Questions live" : "Look-up"}
           />
         )}
-        <p className="text-center text-[15px] leading-relaxed text-cream/75">{snapshot.clue.body}</p>
-        <p className="text-center text-[11px] font-bold uppercase tracking-[0.22em] text-cream/40">
-          Look up · debate quietly · wait for the vote
-        </p>
+        <WaitCard
+          kicker="Projector"
+          title="Look up the clue"
+          body={
+            waitingOnVideo
+              ? `The voice note is on the projector. The question and a ${voteSecs}-second clock land here the moment it ends.`
+              : `Eyes on the projector. The question starts on this phone the moment the clue ends, with a ${voteSecs}-second clock.`
+          }
+        />
       </div>
     );
   }
@@ -256,13 +266,19 @@ export default function PhaseView({
     (snapshot.phase === "voting_open" || snapshot.phase === "final_inference_open") &&
     question
   ) {
+    const expired = remainingMs === 0;
     if (view.foresightWaiting) {
       return (
-        <WaitCard
-          kicker="Foresight"
-          title="Hold. The crowd is voting."
-          body={`${snapshot.crowdLockedCount} of the other nodes have locked in. When they all have, you’ll see their percentages — then you vote last.`}
-        />
+        <div className="mt-5">
+          {remainingMs != null && (
+            <VoteTimer remainingMs={remainingMs} totalMs={voteDurationForRound(snapshot.roundId)} />
+          )}
+          <WaitCard
+            kicker="Foresight"
+            title="Hold. The crowd is voting."
+            body={`${snapshot.crowdLockedCount} of the other nodes have locked in. When they all have, you’ll see their percentages — then you vote last.`}
+          />
+        </div>
       );
     }
     const armed =
@@ -273,6 +289,9 @@ export default function PhaseView({
         : null;
     return (
       <div className="mt-5">
+        {remainingMs != null && (
+          <VoteTimer remainingMs={remainingMs} totalMs={voteDurationForRound(snapshot.roundId)} />
+        )}
         <p className="mb-3 text-center text-[11px] font-bold uppercase tracking-[0.28em] text-cream/45">
           {snapshot.lockedCount} / {snapshot.clusterCount} locked in
         </p>
@@ -289,6 +308,7 @@ export default function PhaseView({
           pendingOption={view.pendingVote?.optionId ?? null}
           pendingWager={view.pendingVote?.wager ?? null}
           split={view.crowdSplit}
+          expired={expired}
           onVote={onVote}
         />
       </div>
@@ -296,15 +316,22 @@ export default function PhaseView({
   }
 
   if (snapshot.phase === "voting_locked" || snapshot.phase === "final_inference_locked") {
-    const letter = view.pendingVote
-      ? (LETTER[view.pendingVote.optionId] ?? view.pendingVote.optionId)
-      : "—";
+    if (!view.pendingVote) {
+      return (
+        <WaitCard
+          kicker="No signal"
+          title="You didn’t lock in."
+          body="Silence is scored as a high-risk miss (α = 1.5) when weights update at the end of the round."
+        />
+      );
+    }
+    const letter = LETTER[view.pendingVote.optionId] ?? view.pendingVote.optionId;
     return (
       <WaitCard
         kicker="Locked"
         title={`${letter} is in the engine.`}
         body={
-          view.pendingVote?.wager
+          view.pendingVote.wager
             ? `Wager α = ${view.pendingVote.wager}. Hold the phone. The host is about to reveal.`
             : "No wager on the final inference. The room is frozen. Watch the projector."
         }
@@ -332,7 +359,7 @@ export default function PhaseView({
           </p>
         )}
         <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.22em] text-cream/40">
-          Weights update after both questions
+          Weights update at the end of the round
         </p>
       </div>
     );
@@ -351,7 +378,7 @@ export default function PhaseView({
         />
         {view.lastResult && snapshot.roundId !== "R0" && (
           <p className="text-sm text-cream/60">
-            {view.lastResult.weightBefore.toFixed(3)} → {view.lastResult.weightAfter.toFixed(3)}
+            {view.lastResult.weightBefore.toFixed(2)} → {view.lastResult.weightAfter.toFixed(2)}
           </p>
         )}
         {snapshot.roundId === "R0" && (
@@ -368,7 +395,7 @@ export default function PhaseView({
       <WaitCard
         kicker="Mic moment"
         title="Two clusters, one archetype."
-        body="No scoring. Listen. If they call your cluster, send one of you up — the rest hold the phone."
+        body='No scoring. Host asks: "Which archetype is your cluster leaning toward right now — and why?" If they call your cluster, send one of you up — the rest hold the phone.'
       />
     );
   }

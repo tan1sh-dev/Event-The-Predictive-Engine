@@ -1,15 +1,21 @@
 import { randomBytes } from "node:crypto";
 import {
   CLUSTER_COUNT,
+  FINAL_CLUE,
   FINAL_QUESTION,
+  FORESIGHT_GRACE_MS,
   INITIAL_WEIGHT,
   MAX_CLUSTER_COUNT,
   MIN_CLUSTER_COUNT,
+  NO_VOTE_ALPHA,
   PHASE_SEQUENCE,
+  clueDurationForRound,
   getQuestion,
   getRound,
   isFinalInference,
   isVotingOpen,
+  roundStartIndex,
+  voteDurationForRound,
   type ClusterView,
   type EnsembleBar,
   type GameSnapshot,
@@ -75,6 +81,10 @@ export class GameEngine {
   private scores = new Map<string, QuestionScore>();
   private weightsFrozen = false;
   private ensemble: EnsembleBar[] | null = null;
+  private voteDeadlineAt: number | null = null;
+  private clueDeadlineAt: number | null = null;
+  private clueStartedAt: number | null = null;
+  private foresightGraceArmed = false;
 
   constructor(opts: EngineOptions = {}) {
     this._clusterCount = opts.clusterCount ?? CLUSTER_COUNT;
@@ -96,6 +106,10 @@ export class GameEngine {
     this.scores.clear();
     this.weightsFrozen = false;
     this.ensemble = null;
+    this.voteDeadlineAt = null;
+    this.clueDeadlineAt = null;
+    this.clueStartedAt = null;
+    this.foresightGraceArmed = false;
     this._clusterCount = 0;
     this.clusters = new Map();
     this.resetClusters();
@@ -323,7 +337,7 @@ export class GameEngine {
     if (!cluster) {
       return { ok: false, error: "not_a_cluster", message: "Unknown cluster." };
     }
-    if (!isVotingOpen(this.step.phase)) {
+    if (!isVotingOpen(this.step.phase) || this.voteWindowClosed()) {
       return {
         ok: false,
         error: "voting_closed",
@@ -586,7 +600,7 @@ export class GameEngine {
           : null;
       const correct = voted ? voted.optionId === correctOptionId : false;
       const y: 1 | -1 = correct ? 1 : -1;
-      const alpha = voted?.wager ?? 0.5;
+      const alpha = voted ? (voted.wager ?? 0.5) : NO_VOTE_ALPHA;
       const result: QuestionResult = {
         questionId: question.id,
         optionId: voted?.optionId ?? "",
@@ -622,7 +636,7 @@ export class GameEngine {
     clusters: PublicClusterState[];
   } {
     const roundId = this.step.roundId;
-    if (!roundId) {
+    if (!roundId || roundId === "FINAL") {
       throw new Error("weight_update requires a roundId");
     }
     const round = getRound(roundId);
@@ -667,15 +681,26 @@ export class GameEngine {
     result: QuestionResult,
     weight: number,
   ): QuestionResult {
+    const abstained = !result.optionId;
     let y: 1 | -1 | 0 = result.correct ? 1 : -1;
-    let alpha = result.wager ?? 0.5;
+    let alpha = abstained ? NO_VOTE_ALPHA : (result.wager ?? 0.5);
     let powerApplied: PowerUp | null = null;
 
-    if (!result.correct && cluster.power?.type === "insurance" && !cluster.power.used) {
+    if (
+      !abstained &&
+      !result.correct &&
+      cluster.power?.type === "insurance" &&
+      !cluster.power.used
+    ) {
       y = 0;
       powerApplied = "insurance";
       cluster.power.used = true;
-    } else if (result.correct && cluster.power?.type === "amplify" && !cluster.power.used) {
+    } else if (
+      !abstained &&
+      result.correct &&
+      cluster.power?.type === "amplify" &&
+      !cluster.power.used
+    ) {
       alpha = alpha * 2;
       powerApplied = "amplify";
       cluster.power.used = true;
@@ -730,6 +755,151 @@ export class GameEngine {
     return this.ensemble;
   }
 
+  private scoredVoteOpen(): boolean {
+    return this.step.phase === "voting_open" || this.step.phase === "final_inference_open";
+  }
+
+  private voteWindowClosed(): boolean {
+    return this.voteDeadlineAt != null && this.now() >= this.voteDeadlineAt;
+  }
+
+  msUntilVoteDeadline(): number | null {
+    if (!this.scoredVoteOpen() || this.voteDeadlineAt == null) return null;
+    return Math.max(0, this.voteDeadlineAt - this.now());
+  }
+
+  msUntilClueDeadline(): number | null {
+    if (this.step.phase !== "clue" || this.clueDeadlineAt == null) return null;
+    return Math.max(0, this.clueDeadlineAt - this.now());
+  }
+
+  clock(): {
+    serverTime: number;
+    voteDeadlineAt: number | null;
+    clueDeadlineAt: number | null;
+    voteRemainingMs: number | null;
+    clueRemainingMs: number | null;
+  } {
+    return {
+      serverTime: this.now(),
+      voteDeadlineAt: this.scoredVoteOpen() ? this.voteDeadlineAt : null,
+      clueDeadlineAt: this.step.phase === "clue" ? this.clueDeadlineAt : null,
+      voteRemainingMs: this.msUntilVoteDeadline(),
+      clueRemainingMs: this.msUntilClueDeadline(),
+    };
+  }
+
+  /**
+   * Called by the socket layer when the clock hits 0.
+   * Locks the question, or gives Foresight holders a short extra window first.
+   */
+  expireOpenVote(): boolean {
+    if (!this.scoredVoteOpen()) return false;
+    if (this.voteDeadlineAt != null && this.now() < this.voteDeadlineAt) return false;
+
+    if (!this.foresightGraceArmed) {
+      const waiting = [...this.clusters.values()].filter((c) => this.isForesightWaiting(c));
+      if (waiting.length > 0) {
+        const split = this.voteSplit(this.getCurrentQuestion(), { crowdOnly: true });
+        for (const cluster of waiting) {
+          cluster.power = { type: "foresight", used: true };
+          cluster.foresightSplit = split;
+        }
+        this.foresightGraceArmed = true;
+        this.voteDeadlineAt = this.now() + FORESIGHT_GRACE_MS;
+        return true;
+      }
+    }
+
+    this.advance();
+    return true;
+  }
+
+  /**
+   * Called when the projector clue window ends — timer, video `ended`, or host skip.
+   * Opens voting immediately with the phone clock (15s/30s on R0, else 90s).
+   * Untimed clues (Round 2) have no deadline and complete as soon as this is called.
+   */
+  expireClue(): boolean {
+    if (this.step.phase !== "clue") return false;
+    if (this.clueDeadlineAt != null && this.now() < this.clueDeadlineAt) return false;
+    this.advance();
+    return true;
+  }
+
+  /**
+   * Jump to a round's clue look-up. Restarts the projector clock, except Round 2
+   * which stays open until the SIP video ends (or the host skips).
+   * Warm-up R0, scored rounds 1–5, and the final inference all start this way.
+   */
+  playRound(roundId: RoundId | "FINAL"):
+    | { ok: true }
+    | { ok: false; error: "illegal_transition" | "bad_payload"; message: string } {
+    if (this.step.phase === "lobby" && this._clusterCount < MIN_CLUSTER_COUNT) {
+      return {
+        ok: false,
+        error: "illegal_transition",
+        message: "Set how many clusters before starting a round.",
+      };
+    }
+    const target = roundStartIndex(roundId);
+    if (target < 0) {
+      return { ok: false, error: "bad_payload", message: `No clue step for ${roundId}.` };
+    }
+    if (this.stepIndex !== target) {
+      this.onLeaveStep(this.step);
+      this.stepIndex = target;
+    }
+    if (roundId === "FINAL" && !this.weightsFrozen) {
+      this.freezeWeights();
+    }
+    this.onEnterStep(this.step);
+    return { ok: true };
+  }
+
+  private startVoteClock(): void {
+    this.voteDeadlineAt = this.now() + voteDurationForRound(this.step.roundId);
+    this.foresightGraceArmed = false;
+  }
+
+  private clearVoteClock(): void {
+    this.voteDeadlineAt = null;
+    this.foresightGraceArmed = false;
+  }
+
+  private startClueClock(): void {
+    const duration = clueDurationForRound(this.step.roundId);
+    this.clueDeadlineAt = duration == null ? null : this.now() + duration;
+  }
+
+  private clearClueClock(): void {
+    this.clueDeadlineAt = null;
+  }
+
+  private syncVoteClock(): void {
+    if (this.scoredVoteOpen()) {
+      if (this.voteDeadlineAt == null) this.startVoteClock();
+    } else {
+      this.clearVoteClock();
+    }
+  }
+
+  private syncClueClock(): void {
+    if (this.step.phase !== "clue") {
+      this.clearClueClock();
+      return;
+    }
+    if (clueDurationForRound(this.step.roundId) == null) {
+      this.clueDeadlineAt = null;
+      return;
+    }
+    if (this.clueDeadlineAt == null) this.startClueClock();
+  }
+
+  private showingClueMedia(step: PhaseStep = this.step): boolean {
+    return step.phase === "clue";
+  }
+
   advance(): PhaseStep {
     if (this.stepIndex < PHASE_SEQUENCE.length - 1) {
       this.onLeaveStep(this.step);
@@ -742,12 +912,14 @@ export class GameEngine {
   back(): PhaseStep {
     if (this.stepIndex > 0) {
       this.stepIndex -= 1;
+      this.syncVoteClock();
+      this.syncClueClock();
     }
     return this.step;
   }
 
   private onLeaveStep(step: PhaseStep): void {
-    if (step.phase === "weight_update" && step.roundId) {
+    if (step.phase === "weight_update" && step.roundId && step.roundId !== "FINAL") {
       // ensure applied if host skipped the animation wait
       const anyUnapplied = [...this.clusters.values()].some((c) =>
         c.roundResults.some((r) =>
@@ -764,6 +936,20 @@ export class GameEngine {
         c.pendingVote = null;
         c.foresightSplit = null;
       }
+    }
+    if (this.scoredVoteOpen()) {
+      this.startVoteClock();
+    } else {
+      this.clearVoteClock();
+    }
+    if (step.phase === "clue") {
+      this.clueStartedAt = this.now();
+      this.startClueClock();
+    } else if (!this.showingClueMedia(step)) {
+      this.clueStartedAt = null;
+      this.clearClueClock();
+    } else {
+      this.clearClueClock();
     }
     if (step.phase === "weight_update") {
       this.applyRoundWeights();
@@ -808,9 +994,15 @@ export class GameEngine {
   snapshot(): GameSnapshot {
     const step = this.step;
     const question = this.getCurrentQuestion();
-    const round = step.roundId ? getRound(step.roundId) : null;
+    const round = step.roundId && step.roundId !== "FINAL" ? getRound(step.roundId) : null;
     const scoreKey = question?.id;
     const correct = scoreKey ? this.scores.get(scoreKey)?.correctOptionId ?? null : null;
+    const clue =
+      step.phase !== "clue"
+        ? null
+        : step.roundId === "FINAL"
+          ? FINAL_CLUE
+          : (round?.clue ?? null);
 
     return {
       phase: step.phase,
@@ -827,8 +1019,8 @@ export class GameEngine {
         step.phase === "ensemble"
           ? question
           : null,
-      clue: step.phase === "clue" && round ? round.clue : null,
-      roundTitle: round?.title ?? null,
+      clue,
+      roundTitle: step.roundId === "FINAL" ? "Final testing" : round?.title ?? null,
       clusters: this.publicClusters(),
       connectedCount: this.connectedCount(),
       lockedCount: this.lockedCount(),
@@ -843,17 +1035,21 @@ export class GameEngine {
           ? correct
           : null,
       joinUrl: this.joinUrl,
+      voteDeadlineAt: this.scoredVoteOpen() ? this.voteDeadlineAt : null,
+      clueDeadlineAt: step.phase === "clue" ? this.clueDeadlineAt : null,
+      clueStartedAt: this.showingClueMedia(step) ? this.clueStartedAt : null,
+      serverTime: this.now(),
     };
   }
 
-  clusterView(clusterNumber: number): ClusterView | null {
+  clusterView(clusterNumber: number, snapshot?: GameSnapshot): ClusterView | null {
     const cluster = this.clusters.get(clusterNumber);
     if (!cluster || !cluster.token) return null;
     const top = this.topClusterNumbers(3);
     return {
       clusterNumber,
       token: cluster.token,
-      snapshot: this.snapshot(),
+      snapshot: snapshot ?? this.snapshot(),
       pendingVote: cluster.pendingVote,
       lastResult: cluster.lastResult,
       power: cluster.power,
@@ -874,6 +1070,10 @@ export class GameEngine {
       weightsFrozen: this.weightsFrozen,
       ensemble: this.ensemble,
       scores: [...this.scores.entries()],
+      voteDeadlineAt: this.voteDeadlineAt,
+      clueDeadlineAt: this.clueDeadlineAt,
+      clueStartedAt: this.clueStartedAt,
+      foresightGraceArmed: this.foresightGraceArmed,
       clusters: [...this.clusters.values()].map((c) => ({
         ...c,
         socketId: null,
@@ -888,12 +1088,20 @@ export class GameEngine {
       weightsFrozen: boolean;
       ensemble: EnsembleBar[] | null;
       scores: [string, QuestionScore][];
+      voteDeadlineAt?: number | null;
+      clueDeadlineAt?: number | null;
+      clueStartedAt?: number | null;
+      foresightGraceArmed?: boolean;
       clusters: ClusterRecord[];
     };
     this.stepIndex = data.stepIndex ?? 0;
     this.weightsFrozen = data.weightsFrozen ?? false;
     this.ensemble = data.ensemble ?? null;
     this.scores = new Map(data.scores ?? []);
+    this.voteDeadlineAt = data.voteDeadlineAt ?? null;
+    this.clueDeadlineAt = data.clueDeadlineAt ?? null;
+    this.clueStartedAt = data.clueStartedAt ?? null;
+    this.foresightGraceArmed = data.foresightGraceArmed ?? false;
     const restoredCount = data.clusterCount ?? data.clusters?.length ?? this._clusterCount;
     if (
       Number.isInteger(restoredCount) &&
@@ -919,5 +1127,7 @@ export class GameEngine {
         live.foresightSplit = c.foresightSplit ?? null;
       }
     }
+    this.syncVoteClock();
+    this.syncClueClock();
   }
 }

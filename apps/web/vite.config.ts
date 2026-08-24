@@ -17,6 +17,7 @@ function mime(file: string): string {
   if (file.endsWith(".webp")) return "image/webp";
   if (file.endsWith(".mp3")) return "audio/mpeg";
   if (file.endsWith(".mp4")) return "video/mp4";
+  if (file.endsWith(".mov")) return "video/quicktime";
   return "application/octet-stream";
 }
 

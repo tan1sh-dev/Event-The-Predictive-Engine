@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import CosmicBackdrop from "../components/CosmicBackdrop.tsx";
 import Hud from "../components/Hud.tsx";
+import SparkleCursor from "../components/SparkleCursor.tsx";
 import { useClusterSession, useEngineSocket } from "../hooks/useClusterSession.ts";
 import JoinGate from "../play/JoinGate.tsx";
 import PhaseView from "../play/PhaseView.tsx";
@@ -12,10 +13,12 @@ export default function PlayPage() {
   return (
     <div className="relative min-h-dvh overflow-hidden">
       <CosmicBackdrop />
+      <SparkleCursor />
       <div className="relative z-10 mx-auto min-h-dvh w-full max-w-md px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
         {!session.view ? (
           session.resuming ? (
             <div className="flex min-h-dvh flex-col items-center justify-center px-6 text-center">
+              <div className="orig-radar mb-4" aria-hidden />
               <p className="text-[11px] font-bold uppercase tracking-[0.38em] text-cyan-200/80">
                 Coding Club · RVCE
               </p>

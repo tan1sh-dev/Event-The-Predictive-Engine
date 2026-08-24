@@ -29,3 +29,12 @@ coverage
 
 # unused design exports
 *.riv
+
+# local scratch — event briefs, screenshot sources, dumps
+Round Details*.docx
+_round_details*
+.tmp-shot/
+media/_*
+assets/demo.mp4
+/cc logo.png
+/cc new logo.jpeg

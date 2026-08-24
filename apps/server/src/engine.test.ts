@@ -209,23 +209,14 @@ describe("voting + AdaBoost round", () => {
       ],
       "b",
     );
-    playQuestion(
-      engine,
-      [
-        { cluster: 1, option: "d", wager: 0.5 },
-        { cluster: 2, option: "a", wager: 1.5 },
-      ],
-      "d",
-    );
 
     goTo(engine, (s) => s.phase === "weight_update" && s.roundId === "R1");
     const low = engine.getCluster(1)!.weight;
     const high = engine.getCluster(2)!.weight;
-    // cluster 1: two correct at 0.5 → exp(0.5)*exp(0.5) = exp(1)
-    assert.ok(Math.abs(low - Math.exp(1)) < 1e-9, `low=${low}`);
-    // cluster 2: correct 1.5 then wrong 1.5 → exp(1.5)*exp(-1.5) = 1
-    assert.ok(Math.abs(high - 1) < 1e-9, `high=${high}`);
-    assert.ok(low > high);
+    // R1 is a single question — correct 0.5 vs correct 1.5
+    assert.ok(Math.abs(low - Math.exp(0.5)) < 1e-9, `low=${low}`);
+    assert.ok(Math.abs(high - Math.exp(1.5)) < 1e-9, `high=${high}`);
+    assert.ok(high > low);
   });
 
   it("rejects votes while voting is closed and requires a wager on scored questions", () => {
@@ -244,6 +235,211 @@ describe("voting + AdaBoost round", () => {
     assert.equal(low.ok, false);
     const high = engine.submitVote(1, "r0-q1", "c", 2);
     assert.equal(high.ok, false);
+  });
+
+  it("starts a 90s clock on scored questions and locks when it expires", () => {
+    let now = 1_000_000;
+    const engine = new GameEngine({ clusterCount: 4, now: () => now });
+    engine.joinCluster(1, undefined, "s1");
+    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R1");
+    const snap = engine.snapshot();
+    assert.equal(snap.voteDeadlineAt, now + 90_000);
+    assert.equal(engine.msUntilVoteDeadline(), 90_000);
+
+    now += 90_000;
+    const late = engine.submitVote(1, "r1-q1", "b", 0.5);
+    assert.equal(late.ok, false);
+    if (!late.ok) assert.equal(late.error, "voting_closed");
+
+    assert.equal(engine.expireOpenVote(), true);
+    assert.equal(engine.step.phase, "voting_locked");
+    assert.equal(engine.snapshot().voteDeadlineAt, null);
+  });
+
+  it("scores silence as a max-risk miss and does not let Insurance save it", () => {
+    const engine = new GameEngine({ clusterCount: 4 });
+    engine.joinCluster(1, undefined, "s1");
+    engine.joinCluster(2, undefined, "s2");
+    goTo(engine, (s) => s.phase === "clue" && s.roundId === "R1");
+    engine.grantPowers([{ clusterNumber: 2, power: "insurance" }]);
+
+    playQuestion(engine, [{ cluster: 1, option: "b", wager: 0.5 }], "b");
+    const silent = engine.getCluster(2)!.lastResult!;
+    assert.equal(silent.optionId, "");
+    assert.equal(silent.correct, false);
+    assert.equal(silent.y, -1);
+    assert.equal(silent.alpha, 1.5);
+
+    goTo(engine, (s) => s.phase === "weight_update" && s.roundId === "R1");
+    assert.ok(Math.abs(engine.getCluster(1)!.weight - Math.exp(0.5)) < 1e-9);
+    assert.ok(Math.abs(engine.getCluster(2)!.weight - Math.exp(-1.5)) < 1e-9);
+    assert.equal(engine.getCluster(2)!.power?.used, false);
+  });
+
+  it("gives Foresight a short grace window when the main clock expires", () => {
+    let now = 5_000_000;
+    const engine = new GameEngine({ clusterCount: 4, now: () => now });
+    engine.joinCluster(1, undefined, "s1");
+    engine.joinCluster(2, undefined, "s2");
+    engine.joinCluster(3, undefined, "s3");
+    engine.grantPowers([{ clusterNumber: 1, power: "foresight" }]);
+    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R1");
+    const q = engine.getCurrentQuestion()!;
+    engine.submitVote(2, q.id, "b", 0.5);
+
+    now += 90_000;
+    assert.equal(engine.expireOpenVote(), true);
+    assert.equal(engine.step.phase, "voting_open");
+    assert.equal(engine.clusterView(1)?.foresightWaiting, false);
+    assert.ok(engine.clusterView(1)?.crowdSplit);
+    assert.equal(engine.msUntilVoteDeadline(), 15_000);
+
+    const lateCrowd = engine.submitVote(1, q.id, "a", 0.5);
+    assert.equal(lateCrowd.ok, true);
+
+    now += 15_000;
+    assert.equal(engine.expireOpenVote(), true);
+    assert.equal(engine.step.phase, "voting_locked");
+  });
+});
+
+describe("clue look-up then 90s vote", () => {
+  it("starts a 30s projector clock on clue and opens voting with 90s when it expires", () => {
+    let now = 2_000_000;
+    const engine = new GameEngine({ clusterCount: 4, now: () => now });
+    engine.setClusterCount(4);
+    engine.joinCluster(1, undefined, "s1");
+    goTo(engine, (s) => s.phase === "clue" && s.roundId === "R1");
+    const clueSnap = engine.snapshot();
+    assert.equal(clueSnap.question, null);
+    assert.ok(clueSnap.clue);
+    assert.equal(clueSnap.clueDeadlineAt, now + 30_000);
+    assert.equal(engine.msUntilClueDeadline(), 30_000);
+
+    now += 29_000;
+    assert.equal(engine.expireClue(), false);
+    now += 1_000;
+    assert.equal(engine.expireClue(), true);
+    assert.equal(engine.step.phase, "voting_open");
+    assert.equal(engine.step.questionIndex, 1);
+    const voteSnap = engine.snapshot();
+    assert.ok(voteSnap.question);
+    assert.equal(voteSnap.clue, null);
+    assert.equal(voteSnap.clueDeadlineAt, null);
+    assert.equal(voteSnap.voteDeadlineAt, now + 90_000);
+  });
+
+  it("exposes one clock pulse for clue then vote remaining", () => {
+    let now = 2_100_000;
+    const engine = new GameEngine({ clusterCount: 4, now: () => now });
+    engine.setClusterCount(4);
+    engine.joinCluster(1, undefined, "s1");
+    assert.equal(engine.playRound("R1").ok, true);
+    const clueClock = engine.clock();
+    assert.equal(clueClock.clueRemainingMs, 30_000);
+    assert.equal(clueClock.voteRemainingMs, null);
+    assert.equal(clueClock.clueDeadlineAt, now + 30_000);
+    now += 5_000;
+    assert.equal(engine.clock().clueRemainingMs, 25_000);
+
+    now += 25_000;
+    assert.equal(engine.expireClue(), true);
+    const voteClock = engine.clock();
+    assert.equal(voteClock.clueRemainingMs, null);
+    assert.equal(engine.clock().voteRemainingMs, 90_000);
+  });
+
+  it("lets the host jump to Play Round 0–5 and Final testing from the lobby", () => {
+    const engine = new GameEngine({ clusterCount: 0 });
+    const blocked = engine.playRound("R1");
+    assert.equal(blocked.ok, false);
+
+    engine.setClusterCount(4);
+    const r0 = engine.playRound("R0");
+    assert.equal(r0.ok, true);
+    assert.equal(engine.step.phase, "clue");
+    assert.equal(engine.step.roundId, "R0");
+    assert.equal(engine.msUntilClueDeadline(), 15_000);
+
+    const r3 = engine.playRound("R3");
+    assert.equal(r3.ok, true);
+    assert.equal(engine.step.phase, "clue");
+    assert.equal(engine.step.roundId, "R3");
+    assert.equal(engine.snapshot().question, null);
+
+    const fin = engine.playRound("FINAL");
+    assert.equal(fin.ok, true);
+    assert.equal(engine.step.phase, "clue");
+    assert.equal(engine.step.roundId, "FINAL");
+    const finalClue = engine.snapshot();
+    assert.equal(finalClue.question, null);
+    assert.equal(finalClue.roundTitle, "Final testing");
+    assert.ok(finalClue.clue);
+    assert.equal(engine.snapshot().weightsFrozen, true);
+
+    engine.advance();
+    assert.equal(engine.step.phase, "final_inference_open");
+    assert.ok(engine.snapshot().question);
+    assert.equal(engine.snapshot().clue, null);
+    assert.ok(engine.snapshot().voteDeadlineAt);
+  });
+
+  it("runs a 15s then 30s flow on Round 0 warm-up", () => {
+    let now = 2_500_000;
+    const engine = new GameEngine({ clusterCount: 4, now: () => now });
+    engine.setClusterCount(4);
+    assert.equal(engine.playRound("R0").ok, true);
+    assert.equal(engine.msUntilClueDeadline(), 15_000);
+    now += 15_000;
+    assert.equal(engine.expireClue(), true);
+    assert.equal(engine.step.phase, "voting_open");
+    assert.equal(engine.msUntilVoteDeadline(), 30_000);
+  });
+
+  it("runs the 30s then 90s flow on timed scored rounds including the final", () => {
+    let now = 3_000_000;
+    const engine = new GameEngine({ clusterCount: 4, now: () => now });
+    engine.setClusterCount(4);
+    for (const roundId of ["R1", "R3", "R4", "R5", "FINAL"] as const) {
+      const started = engine.playRound(roundId);
+      assert.equal(started.ok, true, `play ${roundId}`);
+      assert.equal(engine.step.phase, "clue");
+      assert.equal(engine.snapshot().question, null);
+      now += 30_000;
+      assert.equal(engine.expireClue(), true);
+      const after = engine.snapshot().phase;
+      assert.ok(
+        after === "voting_open" || after === "final_inference_open",
+        `${roundId} opened vote, got ${after}`,
+      );
+      assert.ok(engine.snapshot().question);
+      assert.equal(engine.snapshot().clue, null);
+      assert.equal(engine.msUntilVoteDeadline(), 90_000);
+    }
+  });
+
+  it("opens Round 2 with no clue clock and starts the vote when the video ends", () => {
+    let now = 4_000_000;
+    const engine = new GameEngine({ clusterCount: 4, now: () => now });
+    engine.setClusterCount(4);
+    assert.equal(engine.playRound("R2").ok, true);
+    const clueSnap = engine.snapshot();
+    assert.equal(clueSnap.phase, "clue");
+    assert.equal(clueSnap.roundId, "R2");
+    assert.equal(clueSnap.question, null);
+    assert.equal(clueSnap.clueDeadlineAt, null);
+    assert.equal(engine.msUntilClueDeadline(), null);
+    assert.ok(clueSnap.clueStartedAt);
+
+    now += 120_000;
+    assert.equal(engine.step.phase, "clue");
+    assert.equal(engine.expireClue(), true);
+    assert.equal(engine.step.phase, "voting_open");
+    const voteSnap = engine.snapshot();
+    assert.ok(voteSnap.question);
+    assert.equal(voteSnap.clue, null);
+    assert.equal(voteSnap.voteDeadlineAt, now + 90_000);
+    assert.equal(voteSnap.clueDeadlineAt, null);
   });
 });
 
@@ -279,21 +475,11 @@ describe("power-ups", () => {
       ],
       "b",
     );
-    playQuestion(
-      engine,
-      [
-        { cluster: 1, option: "d", wager: 0.5 },
-        { cluster: 2, option: "d", wager: 0.5 },
-      ],
-      "d",
-    );
     goTo(engine, (s) => s.phase === "weight_update" && s.roundId === "R1");
-    // cluster 1: wrong with insurance (no change) then correct α=0.5 → 2 * exp(0.5)
-    assert.ok(Math.abs(engine.getCluster(1)!.weight - 2 * Math.exp(0.5)) < 1e-9);
-    // cluster 2: correct with amplify α=1.0 then correct α=0.5 → 2 * exp(1) * exp(0.5)
-    assert.ok(
-      Math.abs(engine.getCluster(2)!.weight - 2 * Math.exp(1) * Math.exp(0.5)) < 1e-9,
-    );
+    // cluster 1: wrong with insurance → no change
+    assert.ok(Math.abs(engine.getCluster(1)!.weight - 2) < 1e-9);
+    // cluster 2: correct with amplify α=1.0 → 2 * exp(1)
+    assert.ok(Math.abs(engine.getCluster(2)!.weight - 2 * Math.exp(1)) < 1e-9);
     assert.equal(engine.getCluster(1)!.power?.used, true);
     assert.equal(engine.getCluster(2)!.power?.used, true);
   });
@@ -361,5 +547,16 @@ describe("phase sequence", () => {
     goTo(engine, (s) => s.phase === "debrief");
     engine.advance();
     assert.equal(engine.step.phase, "debrief");
+  });
+
+  it("R1 and R2 have one scored question; later rounds keep two", () => {
+    const open = (roundId: string) =>
+      PHASE_SEQUENCE.filter((s) => s.roundId === roundId && s.phase === "voting_open");
+    assert.equal(open("R1").length, 1);
+    assert.equal(open("R2").length, 1);
+    assert.equal(open("R0").length, 2);
+    assert.equal(open("R3").length, 2);
+    assert.equal(open("R4").length, 2);
+    assert.equal(open("R5").length, 2);
   });
 });

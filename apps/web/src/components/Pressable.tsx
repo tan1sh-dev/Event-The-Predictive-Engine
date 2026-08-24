@@ -19,17 +19,19 @@ export default function Pressable({
   children,
   variant = "go",
   className = "",
-  disabled,
+  disabled = false,
   ...rest
 }: Props) {
   return (
     <button
       type="button"
-      disabled={disabled}
-      className={`pressable relative select-none rounded-full px-5 py-3.5 text-center text-[15px] font-extrabold tracking-wide transition-transform duration-150 ease-out active:translate-y-[5px] active:shadow-none disabled:opacity-40 disabled:active:translate-y-0 ${variants[variant]} ${className}`}
       {...rest}
+      disabled={disabled}
+      aria-disabled={disabled}
+      className={`pressable orig-press relative overflow-hidden select-none rounded-full px-5 py-3.5 text-center text-[15px] font-extrabold tracking-wide transition-transform duration-150 ease-out active:translate-y-[5px] active:shadow-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-40 disabled:active:translate-y-0 ${variants[variant]} ${className}`}
     >
-      {children}
+      {!disabled && <span className="orig-btn-shimmer" aria-hidden />}
+      <span className="relative z-[1]">{children}</span>
     </button>
   );
 }

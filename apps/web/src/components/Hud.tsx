@@ -1,22 +1,44 @@
 import type { ClusterView } from "@engine/shared";
 
-const PHASE_LABEL: Record<string, string> = {
-  lobby: "Lobby",
-  clue: "Clue",
-  voting_open: "Vote",
-  voting_locked: "Locked",
-  reveal: "Reveal",
-  weight_update: "Learn",
-  mic_moment: "Mic",
-  power_grant: "Power",
-  active_query: "Query",
-  freeze: "Freeze",
-  final_inference_open: "Final",
-  final_inference_locked: "Locked",
-  ensemble: "Ensemble",
-  final_reveal: "Reveal",
-  debrief: "Debrief",
-};
+function lockStatus(phase: string, hasVoted: boolean): {
+  label: string;
+  className: string;
+} {
+  const voting =
+    phase === "voting_open" ||
+    phase === "voting_locked" ||
+    phase === "final_inference_open" ||
+    phase === "final_inference_locked";
+
+  if (phase === "clue") {
+    return {
+      label: "Look up",
+      className: "bg-cyan/15 text-cyan ring-1 ring-cyan/30",
+    };
+  }
+  if (!voting) {
+    return {
+      label: "Wait",
+      className: "bg-white/8 text-cream/70 ring-1 ring-white/10",
+    };
+  }
+  if (hasVoted) {
+    return {
+      label: "Locked",
+      className: "bg-mint/15 text-mint ring-1 ring-mint/30",
+    };
+  }
+  if (phase === "voting_locked" || phase === "final_inference_locked") {
+    return {
+      label: "Missed",
+      className: "bg-magenta/15 text-magenta ring-1 ring-magenta/30",
+    };
+  }
+  return {
+    label: "Open",
+    className: "bg-gold/15 text-gold ring-1 ring-gold/30",
+  };
+}
 
 export default function Hud({
   view,
@@ -27,6 +49,7 @@ export default function Hud({
 }) {
   const { snapshot } = view;
   const me = snapshot.clusters.find((c) => c.number === view.clusterNumber);
+  const lock = lockStatus(snapshot.phase, Boolean(me?.hasVoted));
   const q =
     snapshot.questionIndex != null
       ? ` · Q${snapshot.questionIndex}`
@@ -52,14 +75,19 @@ export default function Hud({
       </div>
       <div className="flex items-center gap-2">
         <span
-          className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${
+          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${
             connected ? "bg-mint/15 text-mint" : "bg-magenta/20 text-magenta"
           }`}
         >
+          <span className={`h-1.5 w-1.5 rounded-full ${connected ? "orig-live-dot bg-mint" : "bg-magenta"}`} />
           {connected ? "Live" : "Offline"}
         </span>
-        <span className="rounded-full bg-white/8 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-cream/80 ring-1 ring-white/10">
-          {PHASE_LABEL[snapshot.phase] ?? snapshot.phase}
+        <span
+          className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${lock.className} ${
+            lock.label === "Open" ? "orig-open-pulse" : ""
+          }`}
+        >
+          {lock.label}
         </span>
         <span className="rounded-full bg-gold/15 px-2.5 py-1 text-[11px] font-extrabold text-gold">
           w {(me?.weight ?? 1).toFixed(2)}

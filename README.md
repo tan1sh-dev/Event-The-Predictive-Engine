@@ -9,8 +9,9 @@ packages/shared     protocol types, phase sequence, question copy
 apps/server         game engine + Socket.IO + mock stepper
 apps/web            /play phones · /stage projector · /host control
 index.html / .js    live Three.js projector (served at /stage)
+stage-cursor.js     projector cursor trail
 assets/             projector logos + stage background
-media/              round clue images/audio (not in repo — drop files here)
+media/              round clue images and video
 ```
 
 ## Commands
@@ -32,7 +33,7 @@ Host keys: **N / Space** next phase · **B** back · **R** reveal from answer ke
 
 The room starts at 0 clusters. In the lobby, set the count (2–40) before leaving for Round 0. Phones and the projector rebuild to match.
 
-Host password defaults to `rvce-engine`. Override with `HOST_PASSWORD` (copy `.env.example`). Change it before any public deploy.
+Host password defaults to `rvce_host`. Override with `HOST_PASSWORD` (copy `.env.example`). Change it before any public deploy.
 
 ## Production
 
@@ -47,9 +48,9 @@ No Dockerfile / Railway config yet — that is still to do.
 
 ## Status
 
-Done: engine, protocol, mock server, mobile `/play`, live projector `/stage`, host `/host`, 19 engine tests.
+Done: engine, protocol, mock server, mobile `/play`, live projector `/stage`, host `/host`, 19 engine tests, R0–R4 clue media.
 
-Left: clue media files, Railway (Singapore) deploy, 20-cluster dress rehearsal, a few live-ops hardening items. See the project-status canvas in this Cursor workspace for the full breakdown.
+Left: `media/r5-tabs.png` and `media/final-latent.png`, Railway deploy, 20-cluster dress rehearsal.
 
 ## Contributing
 

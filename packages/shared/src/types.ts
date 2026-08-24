@@ -7,8 +7,36 @@ export const LOW_WAGER = 0.5;
 export const HIGH_WAGER = 1.5;
 export const MID_WAGER = 1;
 export const WAGER_STEP = 0.1;
+/** Projector-only look-up before the question lands on phones. */
+export const CLUE_DURATION_MS = 30_000;
+/** Round 2 plays the SIP video to the end — no projector countdown. */
+export const R2_CLUE_DURATION_MS = null;
+/** Host-started clock on each scored question. */
+export const VOTE_DURATION_MS = 90_000;
+/** Round 0 warm-up: shorter projector look-up. */
+export const R0_CLUE_DURATION_MS = 15_000;
+/** Round 0 warm-up: shorter phone vote clock. */
+export const R0_VOTE_DURATION_MS = 30_000;
+/** Extra window if Foresight is still waiting when the main clock hits 0. */
+export const FORESIGHT_GRACE_MS = 15_000;
+/**
+ * Silence is scored as a max-risk miss: y = −1, α = 1.5.
+ * Same AdaBoost update as locking High Risk and being wrong — not y = −2.
+ */
+export const NO_VOTE_ALPHA = HIGH_WAGER;
 
 export type RoundId = "R0" | "R1" | "R2" | "R3" | "R4" | "R5";
+/** Host "Play round" buttons: warm-up R0, scored rounds 1–5, plus the final inference. */
+export type HostPlayRoundId = RoundId | "FINAL";
+
+export function clueDurationForRound(roundId: RoundId | "FINAL" | null | undefined): number | null {
+  if (roundId === "R2") return R2_CLUE_DURATION_MS;
+  return roundId === "R0" ? R0_CLUE_DURATION_MS : CLUE_DURATION_MS;
+}
+
+export function voteDurationForRound(roundId: RoundId | "FINAL" | null | undefined): number {
+  return roundId === "R0" ? R0_VOTE_DURATION_MS : VOTE_DURATION_MS;
+}
 export type ClientRole = "cluster" | "stage" | "host";
 export type Wager = number;
 
@@ -21,7 +49,7 @@ export function normalizeWager(raw: unknown): Wager | null {
   return snapped;
 }
 export type PowerUp = "insurance" | "amplify" | "foresight";
-export type MediaType = "image" | "audio" | "screenshot";
+export type MediaType = "image" | "audio" | "screenshot" | "video";
 export type OptionId = string;
 
 export type PhaseId =
@@ -73,12 +101,13 @@ export interface RoundConfig {
     body: string;
     media?: MediaAsset;
   };
-  questions: [Question, Question];
+  /** One or two scored questions. R1 and R2 are single-question rounds. */
+  questions: Question[];
 }
 
 export interface PhaseStep {
   phase: PhaseId;
-  roundId?: RoundId;
+  roundId?: RoundId | "FINAL";
   questionIndex?: 1 | 2;
 }
 
@@ -136,7 +165,7 @@ export interface GameSnapshot {
   phase: PhaseId;
   stepIndex: number;
   stepCount: number;
-  roundId: RoundId | null;
+  roundId: RoundId | "FINAL" | null;
   questionIndex: 1 | 2 | null;
   question: Question | null;
   clue: RoundConfig["clue"] | null;
@@ -152,6 +181,23 @@ export interface GameSnapshot {
   ensemble: EnsembleBar[] | null;
   correctOptionId: OptionId | null;
   joinUrl: string | null;
+  /** Epoch ms when the current scored vote window ends. Null if no clock. */
+  voteDeadlineAt: number | null;
+  /** Epoch ms when the projector-only clue window ends. Null if no clock. */
+  clueDeadlineAt: number | null;
+  /** Epoch ms when this clue play started. Changes if the host replays the round. */
+  clueStartedAt: number | null;
+  /** Server clock at snapshot time — clients use this to correct skew. */
+  serverTime: number;
+}
+
+/** Shared countdown pulse so projector, host, and phones show the same second. */
+export interface GameClock {
+  serverTime: number;
+  voteDeadlineAt: number | null;
+  clueDeadlineAt: number | null;
+  voteRemainingMs: number | null;
+  clueRemainingMs: number | null;
 }
 
 /** Per-cluster private view. Broadcast only to that cluster's socket. */
@@ -274,6 +320,10 @@ export interface HostSetClusterCountPayload {
   clusterCount: number;
 }
 
+export interface HostPlayRoundPayload {
+  roundId: HostPlayRoundId;
+}
+
 export type HostAck =
   | { ok: true }
   | { ok: false; error: "not_host" | "illegal_transition" | "bad_payload"; message: string };
@@ -285,6 +335,9 @@ export interface ClientToServerEvents {
   claimPower: (payload: ClaimPowerPayload, cb: (res: PowerAck) => void) => void;
   hostAdvance: (cb: (res: HostAck) => void) => void;
   hostBack: (cb: (res: HostAck) => void) => void;
+  hostPlayRound: (payload: HostPlayRoundPayload, cb: (res: HostAck) => void) => void;
+  /** Projector: untimed clue media finished (Round 2 video). Opens the phone question. */
+  stageClueEnded: (cb?: (res: { ok: boolean }) => void) => void;
   hostReveal: (payload: HostRevealPayload, cb: (res: HostAck) => void) => void;
   hostGrantPowers: (payload: HostGrantPowersPayload, cb: (res: HostAck) => void) => void;
   hostSetWeight: (payload: HostSetWeightPayload, cb: (res: HostAck) => void) => void;
@@ -296,6 +349,7 @@ export interface ClientToServerEvents {
 export interface ServerToClientEvents {
   snapshot: (state: GameSnapshot) => void;
   clusterView: (view: ClusterView) => void;
+  clock: (payload: GameClock) => void;
   voteProgress: (payload: { lockedCount: number; connectedCount: number; clusterCount: number }) => void;
   revealResult: (payload: {
     questionId: string;

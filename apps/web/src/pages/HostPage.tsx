@@ -1,20 +1,52 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  HOST_PLAY_ROUNDS,
   MAX_CLUSTER_COUNT,
   MIN_CLUSTER_COUNT,
   PHASE_SEQUENCE,
+  clueDurationForRound,
+  voteDurationForRound,
   type GameSnapshot,
+  type HostPlayRoundId,
   type PowerUp,
 } from "@engine/shared";
 import Pressable from "../components/Pressable.tsx";
+import SparkleCursor from "../components/SparkleCursor.tsx";
 import { useEngineSocket } from "../hooks/useClusterSession.ts";
 import { LETTER, PHASE_LABEL } from "../lib/labels.ts";
+import VoteTimer, { useVoteRemainingMs } from "../components/VoteTimer.tsx";
 
 const PASS_KEY = "engine.hostPassword";
 
+function HostClockCard({
+  label,
+  remainingMs,
+  totalMs,
+  fallback,
+}: {
+  label: string;
+  remainingMs: number | null;
+  totalMs: number | null;
+  fallback: string;
+}) {
+  const live = remainingMs != null && totalMs != null && totalMs > 0;
+  return (
+    <div className="rounded-2xl bg-black/25 px-4 py-3 ring-1 ring-white/10">
+      {live ? (
+        <VoteTimer remainingMs={remainingMs} totalMs={totalMs} kicker={label} />
+      ) : (
+        <>
+          <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-cream/45">{label}</p>
+          <p className="font-display mt-1 text-2xl">{fallback}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function HostPage() {
   const socket = useEngineSocket();
-  const [password, setPassword] = useState(() => sessionStorage.getItem(PASS_KEY) ?? "rvce-engine");
+  const [password, setPassword] = useState(() => sessionStorage.getItem(PASS_KEY) ?? "rvce_host");
   const [authed, setAuthed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [snap, setSnap] = useState<GameSnapshot | null>(null);
@@ -54,6 +86,8 @@ export default function HostPage() {
 
   const advance = () => socket.emit("hostAdvance", (ack) => !ack.ok && setError(ack.message));
   const back = () => socket.emit("hostBack", (ack) => !ack.ok && setError(ack.message));
+  const playRound = (roundId: HostPlayRoundId) =>
+    socket.emit("hostPlayRound", { roundId }, (ack) => !ack.ok && setError(ack.message));
   const reveal = (optionId: string) =>
     socket.emit("hostReveal", { correctOptionId: optionId }, (ack) => !ack.ok && setError(ack.message));
   const reset = () => {
@@ -107,6 +141,24 @@ export default function HostPage() {
     return PHASE_SEQUENCE[snap.stepIndex + 1] ?? null;
   }, [snap]);
 
+  const remainingMs = useVoteRemainingMs(snap?.voteDeadlineAt, snap?.serverTime, "vote");
+  const clueRemainingMs = useVoteRemainingMs(snap?.clueDeadlineAt, snap?.serverTime, "clue");
+
+  const nextLabel = (() => {
+    if (!snap) return "Next";
+    if (snap.phase === "lobby" && snap.clusterCount < MIN_CLUSTER_COUNT) return "Set clusters first";
+    if (
+      (snap.phase === "reveal" || snap.phase === "final_inference_locked") &&
+      !snap.correctOptionId
+    ) {
+      return "Mark answer first";
+    }
+    if (snap.phase === "clue") return "Skip to question";
+    if (next?.phase === "voting_open") return `Reveal question · Q${next.questionIndex}`;
+    if (next) return `Next · ${PHASE_LABEL[next.phase]}`;
+    return "End";
+  })();
+
   useEffect(() => {
     if (!authed) return;
     const onKey = (e: KeyboardEvent) => {
@@ -125,7 +177,9 @@ export default function HostPage() {
 
   if (!authed) {
     return (
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 px-6">
+      <>
+        <SparkleCursor theme="teal" />
+        <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 px-6">
         <p className="text-[11px] font-bold uppercase tracking-[0.32em] text-mint">Host</p>
         <h1 className="font-display text-4xl">Control the engine</h1>
         <input
@@ -140,13 +194,19 @@ export default function HostPage() {
           Unlock panel
         </Pressable>
         {error && <p className="text-sm text-magenta">{error}</p>}
-        <p className="text-xs text-cream/40">Default password is rvce-engine unless you changed HOST_PASSWORD.</p>
-      </div>
+        <p className="text-xs text-cream/40">Default password is rvce_host unless you changed HOST_PASSWORD.</p>
+        </div>
+      </>
     );
   }
 
   if (!snap) {
-    return <p className="grid min-h-dvh place-items-center">Connecting…</p>;
+    return (
+      <>
+        <SparkleCursor theme="teal" />
+        <p className="grid min-h-dvh place-items-center">Connecting…</p>
+      </>
+    );
   }
 
   const needsReveal =
@@ -154,13 +214,19 @@ export default function HostPage() {
   const question = snap.question;
 
   return (
-    <div className="mx-auto min-h-dvh max-w-6xl px-4 py-5 pb-10">
+    <>
+      <SparkleCursor theme="teal" />
+      <div className="mx-auto min-h-dvh max-w-6xl px-4 py-5 pb-10">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.32em] text-mint">Host · live</p>
           <h1 className="font-display text-3xl">
             {PHASE_LABEL[snap.phase]}
-            {snap.roundId ? ` · ${snap.roundId}` : ""}
+            {snap.roundId === "FINAL"
+              ? " · Final testing"
+              : snap.roundId
+                ? ` · ${snap.roundId}`
+                : ""}
             {snap.questionIndex ? ` Q${snap.questionIndex}` : ""}
           </h1>
         </div>
@@ -174,6 +240,26 @@ export default function HostPage() {
               : `${snap.lockedCount} locked`}
             {snap.weightsFrozen ? " · FROZEN" : ""}
           </p>
+          {clueRemainingMs != null && clueDurationForRound(snap.roundId) != null && (
+            <div className="mt-2 flex justify-end">
+              <VoteTimer
+                remainingMs={clueRemainingMs}
+                totalMs={clueDurationForRound(snap.roundId) ?? 0}
+                compact
+                kicker="Clue"
+              />
+            </div>
+          )}
+          {remainingMs != null && (
+            <div className="mt-2 flex justify-end">
+              <VoteTimer
+                remainingMs={remainingMs}
+                totalMs={voteDurationForRound(snap.roundId)}
+                compact
+                kicker="Question"
+              />
+            </div>
+          )}
         </div>
       </header>
 
@@ -186,29 +272,86 @@ export default function HostPage() {
           Back
         </Pressable>
         <Pressable
-          variant="go"
+          variant="ghost"
           className="min-w-40"
           disabled={needsReveal || (snap.phase === "lobby" && snap.clusterCount < MIN_CLUSTER_COUNT)}
           onClick={advance}
         >
-          {snap.phase === "lobby" && snap.clusterCount < MIN_CLUSTER_COUNT
-            ? "Set clusters first"
-            : needsReveal
-              ? "Mark answer first"
-              : next
-                ? `Next · ${PHASE_LABEL[next.phase]}`
-                : "End"}
+          {nextLabel}
         </Pressable>
         <Pressable variant="danger" onClick={reset}>
           Reset game
         </Pressable>
       </div>
-      <p className="mt-2 text-[11px] text-cream/40">Keys: N / Space next · B back · R reveal from key</p>
+      <p className="mt-2 text-[11px] text-cream/40">
+        Keys: N / Space next (skip look-up) · B back · R reveal from key
+      </p>
+
+      <section className="mt-6 rounded-3xl bg-white/6 p-5 ring-1 ring-white/10">
+        <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-200/70">
+          Start a round
+        </p>
+        <h2 className="font-display mt-1 text-2xl">Play round</h2>
+        <p className="mt-2 text-sm text-cream/60">
+          Projector plays the clue first, then takes it down the moment the question starts.
+          Phones stay on “Look up the clue” until it ends — 30s look-up on scored rounds, 15s
+          on Round 0, or the full SIP video on Round 2. Then the vote clock starts.
+        </p>
+        {(snap.phase === "clue" ||
+          snap.phase === "voting_open" ||
+          snap.phase === "final_inference_open") && (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <HostClockCard
+              label="Clue"
+              remainingMs={clueRemainingMs}
+              totalMs={clueDurationForRound(snap.roundId)}
+              fallback={
+                snap.phase === "clue"
+                  ? clueDurationForRound(snap.roundId) == null
+                    ? "Until video ends"
+                    : "Look-up"
+                  : "Done"
+              }
+            />
+            <HostClockCard
+              label="Question"
+              remainingMs={remainingMs}
+              totalMs={voteDurationForRound(snap.roundId)}
+              fallback={
+                snap.phase === "clue"
+                  ? `Starts after clue · ${Math.round(voteDurationForRound(snap.roundId) / 1000)}s`
+                  : "—"
+              }
+            />
+          </div>
+        )}
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {HOST_PLAY_ROUNDS.map((round) => {
+            const active = snap.roundId === round.id && snap.phase !== "lobby";
+            const blocked = snap.clusterCount < MIN_CLUSTER_COUNT;
+            return (
+              <Pressable
+                key={round.id}
+                variant={active ? "go" : "mint"}
+                className="w-full !rounded-3xl !py-4"
+                disabled={blocked}
+                onClick={() => playRound(round.id)}
+              >
+                <span className="block">{round.label}</span>
+                <span className="mt-1 block text-[12px] font-semibold opacity-75">{round.title}</span>
+              </Pressable>
+            );
+          })}
+        </div>
+        {snap.clusterCount < MIN_CLUSTER_COUNT && (
+          <p className="mt-3 text-sm text-magenta">Set how many clusters before playing a round.</p>
+        )}
+      </section>
 
       {snap.phase === "lobby" && (
         <section className="mt-6 rounded-3xl bg-white/6 p-5 ring-1 ring-white/10">
           <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-200/70">
-            Before Round 0
+            Before the first round
           </p>
           <h2 className="font-display mt-1 text-2xl">How many clusters?</h2>
           <p className="mt-2 text-sm text-cream/60">
@@ -242,7 +385,7 @@ export default function HostPage() {
         <section className="mt-6 rounded-3xl bg-white/6 p-5 ring-1 ring-white/10">
           <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-200/70">On projector</p>
           <h2 className="font-display mt-1 text-2xl">{snap.clue.title}</h2>
-          <p className="mt-2 text-cream/70">{snap.clue.body}</p>
+          <p className="mt-2 whitespace-pre-wrap text-cream/70">{snap.clue.body}</p>
         </section>
       )}
 
@@ -345,7 +488,7 @@ export default function HostPage() {
                   <div className="flex items-center gap-1">
                     <input
                       className="w-20 rounded-lg bg-black/30 px-2 py-1 tabular-nums ring-1 ring-white/10"
-                      value={weightEdits[c.number] ?? c.weight.toFixed(3)}
+                      value={weightEdits[c.number] ?? c.weight.toFixed(2)}
                       onChange={(e) =>
                         setWeightEdits((prev) => ({ ...prev, [c.number]: e.target.value }))
                       }
@@ -367,6 +510,7 @@ export default function HostPage() {
           </tbody>
         </table>
       </section>
-    </div>
+      </div>
+    </>
   );
 }

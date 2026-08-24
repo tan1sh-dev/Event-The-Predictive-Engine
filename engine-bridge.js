@@ -16,10 +16,11 @@ function applySnapshot(snap) {
   window.__engineLive = true;
   if (typeof window.applyEngineSnapshot === "function") {
     window.applyEngineSnapshot(snap);
+    return;
   }
   if (!Array.isArray(snap.clusters) || typeof window.updateClusterWeight !== "function") return;
   for (const cluster of snap.clusters) {
-    window.updateClusterWeight(cluster.number, cluster.visualWeight);
+    window.updateClusterWeight(cluster.number, cluster.weight);
   }
 }
 
@@ -30,6 +31,10 @@ function connectWhenReady() {
   }
 
   const socket = io(engineUrl(), { transports: ["websocket", "polling"] });
+  window.__notifyClueEnded = function notifyClueEnded() {
+    if (!socket.connected) return;
+    socket.emit("stageClueEnded");
+  };
   const join = () => {
     socket.emit("join", { role: "stage" }, (ack) => {
       if (ack?.ok) applySnapshot(ack.snapshot);
@@ -37,6 +42,9 @@ function connectWhenReady() {
   };
   socket.on("connect", join);
   socket.on("snapshot", applySnapshot);
+  socket.on("clock", (payload) => {
+    if (typeof window.applyEngineClock === "function") window.applyEngineClock(payload);
+  });
   socket.on("weightsUpdated", (payload) => {
     if (payload?.clusters) applySnapshot({ clusters: payload.clusters });
   });

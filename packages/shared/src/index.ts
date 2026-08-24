@@ -4,9 +4,12 @@ export type {
   ClientToServerEvents,
   ClusterView,
   EnsembleBar,
+  GameClock,
   GameSnapshot,
   HostAck,
   HostGrantPowersPayload,
+  HostPlayRoundId,
+  HostPlayRoundPayload,
   HostKickPayload,
   HostRevealPayload,
   HostSetClusterCountPayload,
@@ -40,14 +43,23 @@ export type {
 
 export {
   CLUSTER_COUNT,
+  CLUE_DURATION_MS,
+  FORESIGHT_GRACE_MS,
   HIGH_WAGER,
   INITIAL_WEIGHT,
   LOW_WAGER,
   MAX_CLUSTER_COUNT,
   MID_WAGER,
   MIN_CLUSTER_COUNT,
+  NO_VOTE_ALPHA,
+  R0_CLUE_DURATION_MS,
+  R0_VOTE_DURATION_MS,
+  R2_CLUE_DURATION_MS,
+  VOTE_DURATION_MS,
   WAGER_STEP,
+  clueDurationForRound,
   normalizeWager,
+  voteDurationForRound,
 } from "./types.ts";
 
 export {
@@ -57,8 +69,15 @@ export {
   normalizeTeamDetails,
 } from "./team.ts";
 
-export { PHASE_SEQUENCE, isFinalInference, isVotingOpen } from "./phases.ts";
 export {
+  HOST_PLAY_ROUNDS,
+  PHASE_SEQUENCE,
+  isFinalInference,
+  isVotingOpen,
+  roundStartIndex,
+} from "./phases.ts";
+export {
+  FINAL_CLUE,
   FINAL_QUESTION,
   ROUNDS,
   getQuestion,
