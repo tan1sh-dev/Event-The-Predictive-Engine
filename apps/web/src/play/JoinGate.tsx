@@ -212,16 +212,16 @@ export default function JoinGate({
   const stepIndex = step === "size" ? 0 : step === "team" ? 1 : 2;
 
   return (
-    <div className="flex min-h-dvh flex-col px-5 pb-8 pt-[max(1.25rem,env(safe-area-inset-top))]">
+    <div className="flex min-h-dvh flex-col px-5 pb-8 pt-[env(safe-area-inset-top)]">
+      <div className="orig-club-logo orig-fade-up">
+        <span className="orig-club-logo-glow" aria-hidden />
+        <img
+          src="/cc-new-logo.png"
+          alt="Coding Club 10 years"
+          className="orig-club-logo-img"
+        />
+      </div>
       <div className="orig-fade-up orig-club-lockup">
-        <div className="orig-club-logo">
-          <span className="orig-club-logo-glow" aria-hidden />
-          <img
-            src="/cc-new-logo.png"
-            alt="Coding Club 10 years"
-            className="orig-club-logo-img"
-          />
-        </div>
         <p className="orig-club-lockup-label">
           <span>Coding Club</span>
           <span>RVCE</span>

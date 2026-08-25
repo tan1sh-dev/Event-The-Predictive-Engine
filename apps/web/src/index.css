@@ -304,34 +304,34 @@ button {
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 0.65rem;
-  min-height: 4.6rem;
+  justify-content: center;
+  min-height: 4.75rem;
 }
 .orig-club-lockup-label {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  align-items: flex-start;
-  gap: 0.15rem;
+  align-items: center;
+  gap: 0.12rem;
   margin: 0;
-  padding-top: 0;
+  padding: 0 4.9rem;
   font-size: 1.05rem;
   font-weight: 700;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: rgb(165 243 252 / 0.88);
   line-height: 1.15;
-  text-align: left;
+  text-align: center;
 }
 .orig-club-logo {
-  position: relative;
-  z-index: 1;
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  left: env(safe-area-inset-left, 0px);
+  z-index: 30;
   display: grid;
   place-items: center;
-  width: 4.6rem;
-  height: 4.6rem;
-  flex-shrink: 0;
+  width: 4.75rem;
+  height: 4.75rem;
 }
 .orig-club-logo-glow {
   position: absolute;
