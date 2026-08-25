@@ -1,6 +1,10 @@
 import type { ClusterView } from "@engine/shared";
 
-function lockStatus(phase: string, hasVoted: boolean): {
+function lockStatus(
+  phase: string,
+  hasVoted: boolean,
+  canClaimPower: boolean,
+): {
   label: string;
   className: string;
 } {
@@ -14,6 +18,12 @@ function lockStatus(phase: string, hasVoted: boolean): {
     return {
       label: "Look up",
       className: "bg-cyan/15 text-cyan ring-1 ring-cyan/30",
+    };
+  }
+  if (phase === "power_grant" && canClaimPower) {
+    return {
+      label: "Pick",
+      className: "bg-gold/15 text-gold ring-1 ring-gold/30",
     };
   }
   if (!voting) {
@@ -49,7 +59,7 @@ export default function Hud({
 }) {
   const { snapshot } = view;
   const me = snapshot.clusters.find((c) => c.number === view.clusterNumber);
-  const lock = lockStatus(snapshot.phase, Boolean(me?.hasVoted));
+  const lock = lockStatus(snapshot.phase, Boolean(me?.hasVoted), view.canClaimPower);
   const q =
     snapshot.questionIndex != null
       ? ` · Q${snapshot.questionIndex}`

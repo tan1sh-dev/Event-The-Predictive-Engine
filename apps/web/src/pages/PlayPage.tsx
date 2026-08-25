@@ -29,6 +29,8 @@ export default function PlayPage() {
             </div>
           ) : (
             <JoinGate
+              key={session.gateGeneration}
+              startAtTeam={session.startAtTeam}
               busy={session.busy}
               error={session.joinError}
               lastCluster={session.lastCluster}
@@ -50,10 +52,13 @@ export default function PlayPage() {
               >
                 <PhaseView
                   view={session.view}
-                  onVote={(optionId, wager) => {
+                  onVote={(optionId, wager, onAck) => {
                     const q = session.view?.snapshot.question;
-                    if (!q) return;
-                    session.submitVote(q.id, optionId, wager);
+                    if (!q) {
+                      onAck?.(false);
+                      return;
+                    }
+                    session.submitVote(q.id, optionId, wager, onAck);
                   }}
                   onClaim={session.claimPower}
                 />

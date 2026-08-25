@@ -9,6 +9,7 @@ import {
   MIN_CLUSTER_COUNT,
   NO_VOTE_ALPHA,
   PHASE_SEQUENCE,
+  POWER_GRANT_DURATION_MS,
   clueDurationForRound,
   getQuestion,
   getRound,
@@ -84,6 +85,7 @@ export class GameEngine {
   private voteDeadlineAt: number | null = null;
   private clueDeadlineAt: number | null = null;
   private clueStartedAt: number | null = null;
+  private powerGrantDeadlineAt: number | null = null;
   private foresightGraceArmed = false;
 
   constructor(opts: EngineOptions = {}) {
@@ -109,6 +111,7 @@ export class GameEngine {
     this.voteDeadlineAt = null;
     this.clueDeadlineAt = null;
     this.clueStartedAt = null;
+    this.powerGrantDeadlineAt = null;
     this.foresightGraceArmed = false;
     this._clusterCount = 0;
     this.clusters = new Map();
@@ -330,6 +333,7 @@ export class GameEngine {
           | "invalid_option"
           | "wager_required"
           | "wager_not_allowed"
+          | "already_locked"
           | "foresight_wait";
         message: string;
       } {
@@ -357,6 +361,13 @@ export class GameEngine {
         ok: false,
         error: "wrong_question",
         message: "This is not the active question.",
+      };
+    }
+    if (cluster.pendingVote && this.voteMatchesQuestion(cluster.pendingVote, question)) {
+      return {
+        ok: false,
+        error: "already_locked",
+        message: "Your answer is locked in. It can't be changed.",
       };
     }
     if (!question.options.some((o) => o.id === optionId)) {
@@ -528,6 +539,13 @@ export class GameEngine {
         ok: false,
         error: "wrong_phase",
         message: "Power-ups can only be claimed during the grant window after R3.",
+      };
+    }
+    if (this.powerGrantDeadlineAt != null && this.now() >= this.powerGrantDeadlineAt) {
+      return {
+        ok: false,
+        error: "wrong_phase",
+        message: "The 15-second pick window has closed.",
       };
     }
     const cluster = this.clusters.get(clusterNumber);
@@ -777,15 +795,19 @@ export class GameEngine {
     serverTime: number;
     voteDeadlineAt: number | null;
     clueDeadlineAt: number | null;
+    powerGrantDeadlineAt: number | null;
     voteRemainingMs: number | null;
     clueRemainingMs: number | null;
+    powerGrantRemainingMs: number | null;
   } {
     return {
       serverTime: this.now(),
       voteDeadlineAt: this.scoredVoteOpen() ? this.voteDeadlineAt : null,
       clueDeadlineAt: this.step.phase === "clue" ? this.clueDeadlineAt : null,
+      powerGrantDeadlineAt: this.step.phase === "power_grant" ? this.powerGrantDeadlineAt : null,
       voteRemainingMs: this.msUntilVoteDeadline(),
       clueRemainingMs: this.msUntilClueDeadline(),
+      powerGrantRemainingMs: this.msUntilPowerGrantDeadline(),
     };
   }
 
@@ -823,6 +845,16 @@ export class GameEngine {
   expireClue(): boolean {
     if (this.step.phase !== "clue") return false;
     if (this.clueDeadlineAt != null && this.now() < this.clueDeadlineAt) return false;
+    this.advance();
+    return true;
+  }
+
+  /**
+   * Called when the top-3 pick window hits 0. Unclaimed nodes keep no power.
+   */
+  expirePowerGrant(): boolean {
+    if (this.step.phase !== "power_grant") return false;
+    if (this.powerGrantDeadlineAt != null && this.now() < this.powerGrantDeadlineAt) return false;
     this.advance();
     return true;
   }
@@ -876,6 +908,27 @@ export class GameEngine {
     this.clueDeadlineAt = null;
   }
 
+  private startPowerGrantClock(): void {
+    this.powerGrantDeadlineAt = this.now() + POWER_GRANT_DURATION_MS;
+  }
+
+  private clearPowerGrantClock(): void {
+    this.powerGrantDeadlineAt = null;
+  }
+
+  private syncPowerGrantClock(): void {
+    if (this.step.phase !== "power_grant") {
+      this.clearPowerGrantClock();
+      return;
+    }
+    if (this.powerGrantDeadlineAt == null) this.startPowerGrantClock();
+  }
+
+  msUntilPowerGrantDeadline(): number | null {
+    if (this.step.phase !== "power_grant" || this.powerGrantDeadlineAt == null) return null;
+    return Math.max(0, this.powerGrantDeadlineAt - this.now());
+  }
+
   private syncVoteClock(): void {
     if (this.scoredVoteOpen()) {
       if (this.voteDeadlineAt == null) this.startVoteClock();
@@ -914,6 +967,7 @@ export class GameEngine {
       this.stepIndex -= 1;
       this.syncVoteClock();
       this.syncClueClock();
+      this.syncPowerGrantClock();
     }
     return this.step;
   }
@@ -953,6 +1007,11 @@ export class GameEngine {
     }
     if (step.phase === "weight_update") {
       this.applyRoundWeights();
+    }
+    if (step.phase === "power_grant") {
+      this.startPowerGrantClock();
+    } else {
+      this.clearPowerGrantClock();
     }
     if (step.phase === "freeze") {
       this.freezeWeights();
@@ -1037,6 +1096,7 @@ export class GameEngine {
       joinUrl: this.joinUrl,
       voteDeadlineAt: this.scoredVoteOpen() ? this.voteDeadlineAt : null,
       clueDeadlineAt: step.phase === "clue" ? this.clueDeadlineAt : null,
+      powerGrantDeadlineAt: step.phase === "power_grant" ? this.powerGrantDeadlineAt : null,
       clueStartedAt: this.showingClueMedia(step) ? this.clueStartedAt : null,
       serverTime: this.now(),
     };
@@ -1073,6 +1133,7 @@ export class GameEngine {
       voteDeadlineAt: this.voteDeadlineAt,
       clueDeadlineAt: this.clueDeadlineAt,
       clueStartedAt: this.clueStartedAt,
+      powerGrantDeadlineAt: this.powerGrantDeadlineAt,
       foresightGraceArmed: this.foresightGraceArmed,
       clusters: [...this.clusters.values()].map((c) => ({
         ...c,
@@ -1091,6 +1152,7 @@ export class GameEngine {
       voteDeadlineAt?: number | null;
       clueDeadlineAt?: number | null;
       clueStartedAt?: number | null;
+      powerGrantDeadlineAt?: number | null;
       foresightGraceArmed?: boolean;
       clusters: ClusterRecord[];
     };
@@ -1101,6 +1163,7 @@ export class GameEngine {
     this.voteDeadlineAt = data.voteDeadlineAt ?? null;
     this.clueDeadlineAt = data.clueDeadlineAt ?? null;
     this.clueStartedAt = data.clueStartedAt ?? null;
+    this.powerGrantDeadlineAt = data.powerGrantDeadlineAt ?? null;
     this.foresightGraceArmed = data.foresightGraceArmed ?? false;
     const restoredCount = data.clusterCount ?? data.clusters?.length ?? this._clusterCount;
     if (
@@ -1129,5 +1192,6 @@ export class GameEngine {
     }
     this.syncVoteClock();
     this.syncClueClock();
+    this.syncPowerGrantClock();
   }
 }

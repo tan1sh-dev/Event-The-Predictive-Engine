@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import {
   MID_WAGER,
+  POWER_GRANT_DURATION_MS,
   clueDurationForRound,
   normalizeWager,
   voteDurationForRound,
   type ClusterView,
   type PowerUp,
+  type PublicClusterState,
   type Question,
+  type QuestionResult,
   type VoteSplitEntry,
   type Wager,
 } from "@engine/shared";
@@ -108,27 +111,29 @@ function VoteForm({
   pendingWager: Wager | null;
   split: VoteSplitEntry[] | null;
   expired: boolean;
-  onVote: (optionId: string, wager: Wager | null) => void;
+  onVote: (optionId: string, wager: Wager | null, onAck?: (ok: boolean) => void) => void;
 }) {
   const [option, setOption] = useState<string | null>(pendingOption);
   const [wager, setWager] = useState<Wager>(pendingWager ?? MID_WAGER);
+  const [lockedIn, setLockedIn] = useState(Boolean(pendingOption));
 
   useEffect(() => {
     setOption(pendingOption);
     setWager(pendingWager ?? MID_WAGER);
+    setLockedIn(Boolean(pendingOption));
   }, [pendingOption, pendingWager, question.id]);
 
   const ready = Boolean(option) && (!wagerRequired || normalizeWager(wager) != null);
-  const lockedIn =
-    Boolean(pendingOption) &&
-    pendingOption === option &&
-    (!wagerRequired || pendingWager === wager);
+  const frozen = lockedIn || expired;
 
   const lockIn = () => {
-    if (expired) return;
+    if (frozen) return;
     if (!option) return;
     if (wagerRequired && wager == null) return;
-    onVote(option, wagerRequired ? (normalizeWager(wager) ?? wager) : null);
+    setLockedIn(true);
+    onVote(option, wagerRequired ? (normalizeWager(wager) ?? wager) : null, (ok) => {
+      if (!ok) setLockedIn(false);
+    });
   };
 
   return (
@@ -147,14 +152,15 @@ function VoteForm({
             <button
               key={opt.id}
               type="button"
+              disabled={frozen}
               onClick={() => {
-                if (expired) return;
+                if (frozen) return;
                 setOption(opt.id);
                 if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(8);
               }}
               className={`orig-option flex items-center gap-3 rounded-2xl px-3 py-3 text-left ${
                 on ? "is-on" : ""
-              }`}
+              } ${frozen ? "pointer-events-none" : ""} ${frozen && !on ? "opacity-50" : ""}`}
               style={{ animationDelay: `${i * 0.05}s` }}
             >
               <span className="orig-option-letter grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#071018] font-extrabold text-cyan">
@@ -178,21 +184,17 @@ function VoteForm({
           <p className="mt-1 text-center text-[11px] font-bold uppercase tracking-widest text-cream/50">
             {wager <= 0.7 ? "Low risk" : wager >= 1.3 ? "High risk" : "Mid risk"}
           </p>
-          <WagerArc value={wager} onChange={setWager} disabled={expired} />
+          <WagerArc value={wager} onChange={setWager} disabled={frozen} />
         </div>
       )}
 
       <Pressable
         variant="go"
-        className="w-full"
-        disabled={!ready || expired}
+        className={`w-full ${lockedIn ? "disabled:!opacity-100" : ""}`}
+        disabled={!ready || frozen}
         onClick={lockIn}
       >
-        {lockedIn
-          ? "Locked in"
-          : pendingOption
-            ? "Update lock"
-            : "Lock in"}
+        {lockedIn ? "Locked in" : "Lock in"}
       </Pressable>
       {!ready && (
         <p className="text-center text-[11px] text-cream/40">
@@ -211,13 +213,42 @@ function VoteForm({
   );
 }
 
+function WeightUpdateScreen({
+  snapshot,
+  me,
+  lastResult,
+}: {
+  snapshot: ClusterView["snapshot"];
+  me: PublicClusterState | undefined;
+  lastResult: QuestionResult | null;
+}) {
+  return (
+    <div className="mt-10 flex flex-col items-center gap-2">
+      <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-200/80">
+        {snapshot.roundId === "R0" ? "Calibration · discarded" : "AdaBoost update"}
+      </p>
+      <WeightOrb visual={me?.visualWeight ?? 0.5} weight={me?.weight ?? 1} pulse />
+      {lastResult && snapshot.roundId !== "R0" && (
+        <p className="text-sm text-cream/60">
+          {lastResult.weightBefore.toFixed(2)} → {lastResult.weightAfter.toFixed(2)}
+        </p>
+      )}
+      {snapshot.roundId === "R0" && (
+        <p className="max-w-xs text-center text-sm text-cream/60">
+          Practice round. Every node snaps back to 1. The real learning starts next.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function PhaseView({
   view,
   onVote,
   onClaim,
 }: {
   view: ClusterView;
-  onVote: (optionId: string, wager: Wager | null) => void;
+  onVote: (optionId: string, wager: Wager | null, onAck?: (ok: boolean) => void) => void;
   onClaim: (power: PowerUp) => void;
 }) {
   const { snapshot } = view;
@@ -225,6 +256,11 @@ export default function PhaseView({
   const question = snapshot.question;
   const remainingMs = useVoteRemainingMs(snapshot.voteDeadlineAt, snapshot.serverTime, "vote");
   const clueRemainingMs = useVoteRemainingMs(snapshot.clueDeadlineAt, snapshot.serverTime, "clue");
+  const powerGrantRemainingMs = useVoteRemainingMs(
+    snapshot.powerGrantDeadlineAt,
+    snapshot.serverTime,
+    "power",
+  );
 
   if (snapshot.phase === "lobby") {
     return (
@@ -366,28 +402,7 @@ export default function PhaseView({
   }
 
   if (snapshot.phase === "weight_update") {
-    return (
-      <div className="mt-10 flex flex-col items-center gap-2">
-        <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-200/80">
-          {snapshot.roundId === "R0" ? "Calibration · discarded" : "AdaBoost update"}
-        </p>
-        <WeightOrb
-          visual={me?.visualWeight ?? 0.5}
-          weight={me?.weight ?? 1}
-          pulse
-        />
-        {view.lastResult && snapshot.roundId !== "R0" && (
-          <p className="text-sm text-cream/60">
-            {view.lastResult.weightBefore.toFixed(2)} → {view.lastResult.weightAfter.toFixed(2)}
-          </p>
-        )}
-        {snapshot.roundId === "R0" && (
-          <p className="max-w-xs text-center text-sm text-cream/60">
-            Practice round. Every node snaps back to 1. The real learning starts next.
-          </p>
-        )}
-      </div>
-    );
+    return <WeightUpdateScreen snapshot={snapshot} me={me} lastResult={view.lastResult} />;
   }
 
   if (snapshot.phase === "mic_moment") {
@@ -401,16 +416,30 @@ export default function PhaseView({
   }
 
   if (snapshot.phase === "power_grant") {
+    const expired = powerGrantRemainingMs === 0;
     if (view.canClaimPower) {
       return (
         <div className="mt-6 flex flex-col gap-3">
-          <h2 className="font-display text-center text-3xl font-bold">You made top 3.</h2>
+          {powerGrantRemainingMs != null && (
+            <VoteTimer
+              remainingMs={powerGrantRemainingMs}
+              totalMs={POWER_GRANT_DURATION_MS}
+              kicker="Pick a boost"
+            />
+          )}
+          <h2 className="font-display text-center text-3xl font-bold">You made it to top 3.</h2>
           <p className="mb-2 text-center text-sm text-cream/65">
             Pick one boost. Insurance and Amplify change your weight. Foresight lets you vote last
             after you see the crowd.
           </p>
           {POWERS.map((p) => (
-            <Pressable key={p.id} variant={p.variant} className="w-full !rounded-3xl !py-5" onClick={() => onClaim(p.id)}>
+            <Pressable
+              key={p.id}
+              variant={p.variant}
+              className="w-full !rounded-3xl !py-5"
+              disabled={expired}
+              onClick={() => onClaim(p.id)}
+            >
               <span className="block">{p.title}</span>
               <span className="mt-1 block text-[12px] font-semibold opacity-80">{p.body}</span>
             </Pressable>
@@ -418,19 +447,20 @@ export default function PhaseView({
         </div>
       );
     }
-    return (
-      <WaitCard
-        kicker="Weight power"
-        title={view.power ? `${view.power.type} is yours.` : "Top 3 are picking."}
-        body={
-          view.power
-            ? view.power.type === "foresight"
+    if (view.power) {
+      return (
+        <WaitCard
+          kicker="Weight power"
+          title={`${view.power.type} is yours.`}
+          body={
+            view.power.type === "foresight"
               ? "Next vote, you wait for the crowd, see their %, then lock in last."
               : "You’ll vote with everyone else. This only changes how your weight moves."
-            : "You’ll vote as usual on the next question — no boost. Top 3 are choosing theirs."
-        }
-      />
-    );
+          }
+        />
+      );
+    }
+    return <WeightUpdateScreen snapshot={snapshot} me={me} lastResult={view.lastResult} />;
   }
 
   if (snapshot.phase === "active_query") {

@@ -19,6 +19,8 @@ export const R0_CLUE_DURATION_MS = 15_000;
 export const R0_VOTE_DURATION_MS = 30_000;
 /** Extra window if Foresight is still waiting when the main clock hits 0. */
 export const FORESIGHT_GRACE_MS = 15_000;
+/** Top-3 pick window after Round 3 weight update. */
+export const POWER_GRANT_DURATION_MS = 15_000;
 /**
  * Silence is scored as a max-risk miss: y = −1, α = 1.5.
  * Same AdaBoost update as locking High Risk and being wrong — not y = −2.
@@ -137,7 +139,7 @@ export interface QuestionResult {
 export interface TeamDetails {
   teamName: string;
   leaderName: string;
-  /** Exactly four remaining teammates. */
+  /** 0–4 teammates besides the leader (total group size 1–5). */
   members: string[];
 }
 
@@ -185,6 +187,8 @@ export interface GameSnapshot {
   voteDeadlineAt: number | null;
   /** Epoch ms when the projector-only clue window ends. Null if no clock. */
   clueDeadlineAt: number | null;
+  /** Epoch ms when the top-3 power pick window ends. Null if no clock. */
+  powerGrantDeadlineAt: number | null;
   /** Epoch ms when this clue play started. Changes if the host replays the round. */
   clueStartedAt: number | null;
   /** Server clock at snapshot time — clients use this to correct skew. */
@@ -196,8 +200,10 @@ export interface GameClock {
   serverTime: number;
   voteDeadlineAt: number | null;
   clueDeadlineAt: number | null;
+  powerGrantDeadlineAt: number | null;
   voteRemainingMs: number | null;
   clueRemainingMs: number | null;
+  powerGrantRemainingMs: number | null;
 }
 
 /** Per-cluster private view. Broadcast only to that cluster's socket. */
@@ -346,6 +352,8 @@ export interface ClientToServerEvents {
   hostReset: (cb: (res: HostAck) => void) => void;
 }
 
+export type SessionResetReason = "game_reset" | "kicked";
+
 export interface ServerToClientEvents {
   snapshot: (state: GameSnapshot) => void;
   clusterView: (view: ClusterView) => void;
@@ -364,6 +372,8 @@ export interface ServerToClientEvents {
   powersGranted: (payload: { grants: { clusterNumber: number; power: PowerUp }[] }) => void;
   ensembleResult: (payload: { bars: EnsembleBar[] }) => void;
   error: (payload: { message: string }) => void;
+  /** Host ended this phone's session. Mobile UI must reopen the team-details form. */
+  sessionReset: (payload: { reason: SessionResetReason }) => void;
 }
 
 export interface SocketData {

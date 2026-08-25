@@ -6,6 +6,7 @@ import {
   type HostAck,
   type JoinAck,
   type ServerToClientEvents,
+  type SessionResetReason,
   type SocketData,
 } from "@engine/shared";
 import { ANSWER_KEY } from "./answer-key.ts";
@@ -33,9 +34,26 @@ function releaseClusterClient(sock: Sock): void {
   sock.data.clusterNumber = undefined;
 }
 
+function emitSessionReset(
+  io: Io,
+  reason: SessionResetReason,
+  target?: Sock,
+): void {
+  if (target) {
+    target.emit("sessionReset", { reason });
+    return;
+  }
+  for (const sock of io.sockets.sockets.values()) {
+    if (sock.data.role === "host" || sock.data.role === "stage") continue;
+    sock.emit("sessionReset", { reason });
+    if (sock.data.role === "cluster") releaseClusterClient(sock);
+  }
+}
+
 export function attachSockets(io: Io, engine: GameEngine): void {
   let voteTimer: ReturnType<typeof setTimeout> | null = null;
   let clueTimer: ReturnType<typeof setTimeout> | null = null;
+  let powerGrantTimer: ReturnType<typeof setTimeout> | null = null;
   let clockPulse: ReturnType<typeof setInterval> | null = null;
 
   const save = () => {
@@ -48,7 +66,9 @@ export function attachSockets(io: Io, engine: GameEngine): void {
 
   const armClockPulse = () => {
     const live =
-      engine.msUntilVoteDeadline() != null || engine.msUntilClueDeadline() != null;
+      engine.msUntilVoteDeadline() != null ||
+      engine.msUntilClueDeadline() != null ||
+      engine.msUntilPowerGrantDeadline() != null;
     if (!live) {
       if (clockPulse) {
         clearInterval(clockPulse);
@@ -89,6 +109,19 @@ export function attachSockets(io: Io, engine: GameEngine): void {
     }, remaining);
   };
 
+  const armPowerGrantTimer = () => {
+    if (powerGrantTimer) {
+      clearTimeout(powerGrantTimer);
+      powerGrantTimer = null;
+    }
+    const remaining = engine.msUntilPowerGrantDeadline();
+    if (remaining == null) return;
+    powerGrantTimer = setTimeout(() => {
+      powerGrantTimer = null;
+      if (engine.expirePowerGrant()) broadcast();
+    }, remaining);
+  };
+
   const broadcast = () => {
     const snap = engine.snapshot();
     io.emit("snapshot", snap);
@@ -106,12 +139,14 @@ export function attachSockets(io: Io, engine: GameEngine): void {
     }
     armVoteTimer();
     armClueTimer();
+    armPowerGrantTimer();
     armClockPulse();
     save();
   };
 
   armVoteTimer();
   armClueTimer();
+  armPowerGrantTimer();
   armClockPulse();
 
   io.on("connection", (socket) => {
@@ -362,8 +397,10 @@ export function attachSockets(io: Io, engine: GameEngine): void {
       engine.kickCluster(payload.clusterNumber);
       if (sid) {
         const sock = io.sockets.sockets.get(sid);
-        sock?.emit("error", { message: "Host reset this cluster's session." });
-        if (sock) releaseClusterClient(sock);
+        if (sock) {
+          emitSessionReset(io, "kicked", sock);
+          releaseClusterClient(sock);
+        }
       }
       cb({ ok: true });
       broadcast();
@@ -375,18 +412,7 @@ export function attachSockets(io: Io, engine: GameEngine): void {
         cb(denied);
         return;
       }
-      const live: { sid: string; n: number }[] = [];
-      for (let n = 1; n <= engine.clusterCount; n++) {
-        const sid = engine.getCluster(n)?.socketId;
-        if (sid) live.push({ sid, n });
-      }
-      for (const { sid, n } of live) {
-        const sock = io.sockets.sockets.get(sid);
-        sock?.emit("error", {
-          message: "Host reset the game. Pick your cluster again.",
-        });
-        if (sock) releaseClusterClient(sock);
-      }
+      emitSessionReset(io, "game_reset");
       engine.reset();
       cb({ ok: true });
       broadcast();
@@ -434,7 +460,7 @@ function handleJoin(
     return {
       ok: false,
       error: "invalid_team",
-      message: "Enter your team name, leader, and four teammates before picking a cluster.",
+      message: "Enter a team name, leader, and unique teammate names (1–5 people total) before picking a cluster.",
     };
   }
 

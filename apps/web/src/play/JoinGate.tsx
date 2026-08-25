@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   MAX_TEAM_FIELD_LENGTH,
-  TEAM_MEMBER_COUNT,
+  MAX_TEAM_SIZE,
+  MIN_TEAM_SIZE,
+  clampTeamSize,
   emptyTeamDraft,
+  hasDuplicatePersonNames,
   normalizeTeamDetails,
+  resizeMembers,
   type GameSnapshot,
   type TeamDetails,
 } from "@engine/shared";
@@ -24,9 +29,11 @@ function hue(n: number, total: number): string {
 const STATUS_PHRASES = [
   "Scanning cluster signals…",
   "Awaiting crew telemetry…",
-  "Five names. One phone. One engine.",
+  "One phone. Your whole crew on it.",
   "Signal stable · ready to lock a node",
 ];
+
+type JoinStep = "size" | "team" | "cluster";
 
 function Field({
   id,
@@ -65,12 +72,19 @@ function Field({
   );
 }
 
+function initialStep(saved: TeamDetails | null, startAtTeam: boolean): JoinStep {
+  if (startAtTeam) return saved ? "team" : "size";
+  if (saved) return "cluster";
+  return "size";
+}
+
 export default function JoinGate({
   busy,
   error,
   lastCluster,
   connected,
   clusterCount,
+  startAtTeam = false,
   onJoin,
 }: {
   busy: boolean;
@@ -78,40 +92,40 @@ export default function JoinGate({
   lastCluster: number | null;
   connected: boolean;
   clusterCount: number;
+  startAtTeam?: boolean;
   onJoin: (n: number, team: TeamDetails) => void;
 }) {
   const saved = useMemo(() => loadTeam(), []);
+  const [teamSize, setTeamSize] = useState(() =>
+    saved ? clampTeamSize(1 + saved.members.length) : MAX_TEAM_SIZE,
+  );
   const [draft, setDraft] = useState(() => {
-    const blank = emptyTeamDraft();
-    if (!saved) return blank;
+    if (!saved) return emptyTeamDraft(MAX_TEAM_SIZE);
     return {
       teamName: saved.teamName,
       leaderName: saved.leaderName,
-      members: [
-        saved.members[0] ?? "",
-        saved.members[1] ?? "",
-        saved.members[2] ?? "",
-        saved.members[3] ?? "",
-      ] as [string, string, string, string],
+      members: [...saved.members],
     };
   });
-  const [step, setStep] = useState<"team" | "cluster">(saved ? "cluster" : "team");
+  const [step, setStep] = useState<JoinStep>(() => initialStep(saved, startAtTeam));
   const [formError, setFormError] = useState<string | null>(null);
-  const [launchStep, setLaunchStep] = useState<string | null>(null);
   const [occupied, setOccupied] = useState<Record<number, string>>({});
   const draftRef = useRef(draft);
   draftRef.current = draft;
-  const launchingRef = useRef(false);
 
   const team = normalizeTeamDetails(draft);
   const resume = lastCluster != null && lastCluster <= clusterCount ? lastCluster : null;
-  const formLocked = Boolean(launchStep);
+  const teammateSlots = teamSize - 1;
+
+  useEffect(() => {
+    if (startAtTeam) setStep(saved ? "team" : "size");
+  }, [startAtTeam, saved]);
 
   useEffect(() => {
     if (step === "cluster" && !team) {
-      setStep("team");
+      setStep(draft.members.length === 0 && !draft.teamName && !draft.leaderName ? "size" : "team");
     }
-  }, [step, team]);
+  }, [step, team, draft.members.length, draft.teamName, draft.leaderName]);
 
   useEffect(() => {
     if (step !== "cluster") return;
@@ -139,51 +153,63 @@ export default function JoinGate({
     };
   }, [step]);
 
+  const applyTeamSize = (size: number) => {
+    const nextSize = clampTeamSize(size);
+    setTeamSize(nextSize);
+    setDraft((prev) => ({
+      ...prev,
+      members: resizeMembers(prev.members, nextSize),
+    }));
+    setFormError(null);
+  };
+
   const filledMembersCount = draft.members.filter((m) => m.trim().length > 0).length;
-  const totalFields = 2 + TEAM_MEMBER_COUNT;
+  const totalFields = 2 + teammateSlots;
   const filledCount =
     (draft.teamName.trim() ? 1 : 0) + (draft.leaderName.trim() ? 1 : 0) + filledMembersCount;
-  // Unlock only when normalize accepts every field (not just non-empty trim counts).
+  const fieldsComplete =
+    Boolean(draft.teamName.trim()) &&
+    Boolean(draft.leaderName.trim()) &&
+    filledMembersCount === teammateSlots;
+  const hasDuplicates =
+    fieldsComplete && hasDuplicatePersonNames(draft.leaderName, draft.members);
   const allFilled = team != null;
-  const progressPercent = Math.round((filledCount / totalFields) * 100);
+  const progressPercent = totalFields === 0 ? 0 : Math.round((filledCount / totalFields) * 100);
   const radius = 22;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (progressPercent / 100) * circumference;
 
-  const continueToCluster = async (e?: FormEvent) => {
+  const continueFromSize = () => {
+    applyTeamSize(teamSize);
+    setStep("team");
+  };
+
+  const continueToCluster = (e?: FormEvent) => {
     e?.preventDefault();
-    if (launchingRef.current) return;
     const next = normalizeTeamDetails(draftRef.current);
     if (!next) {
-      setFormError("Fill team name, leader, and all four teammates.");
+      const d = draftRef.current;
+      if (
+        d.leaderName.trim() &&
+        d.members.every((m) => m.trim()) &&
+        hasDuplicatePersonNames(d.leaderName, d.members)
+      ) {
+        setFormError("Each person needs a unique name — no duplicates.");
+      } else {
+        setFormError(
+          teammateSlots === 0
+            ? "Fill team name and leader."
+            : `Fill team name, leader, and all ${teammateSlots} teammate${teammateSlots === 1 ? "" : "s"}.`,
+        );
+      }
       return;
     }
-    launchingRef.current = true;
     setFormError(null);
-    setLaunchStep("Authorizing…");
-    await new Promise((r) => setTimeout(r, 280));
-    setLaunchStep("3");
-    await new Promise((r) => setTimeout(r, 280));
-    setLaunchStep("2");
-    await new Promise((r) => setTimeout(r, 280));
-    setLaunchStep("1");
-    await new Promise((r) => setTimeout(r, 280));
-    // Re-check after the countdown in case a field was cleared mid-flight.
-    const stillValid = normalizeTeamDetails(draftRef.current);
-    if (!stillValid) {
-      launchingRef.current = false;
-      setLaunchStep(null);
-      setFormError("Fill team name, leader, and all four teammates.");
-      setStep("team");
-      return;
-    }
-    setLaunchStep("Locked");
-    saveTeam(stillValid);
-    await new Promise((r) => setTimeout(r, 420));
-    setLaunchStep(null);
-    launchingRef.current = false;
+    saveTeam(next);
     setStep("cluster");
   };
+
+  const stepIndex = step === "size" ? 0 : step === "team" ? 1 : 2;
 
   return (
     <div className="flex min-h-dvh flex-col px-5 pb-8 pt-[max(1.25rem,env(safe-area-inset-top))]">
@@ -207,9 +233,11 @@ export default function JoinGate({
         Engine
       </h1>
       <p className="orig-fade-up orig-delay-2 mx-auto mt-3 max-w-xs text-center text-sm leading-relaxed text-cream/65">
-        {step === "team"
-          ? "Five of you. One phone. Name the squad first — then lock a node on the network."
-          : "Pick your node. Debate, then lock a single signal into the network."}
+        {step === "size"
+          ? "How many people share this phone? Solo is fine — max is five."
+          : step === "team"
+            ? `${teamSize} of you. One phone. Name the squad — then lock a node.`
+            : "Pick your node. Debate, then lock a single signal into the network."}
       </p>
 
       <div className="orig-fade-up orig-delay-3 mt-5 flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-widest">
@@ -221,203 +249,298 @@ export default function JoinGate({
         <TypeLine phrases={STATUS_PHRASES} />
       </div>
 
-      <div className="mt-4 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-cream/40">
-        <span className={step === "team" ? "text-cyan" : "text-mint"}>1 · Team</span>
-        <span className="h-px w-8 overflow-hidden bg-white/15">
-          <span className={`block h-full bg-cyan transition-all duration-500 ${step === "cluster" ? "w-full" : "w-1/3"}`} />
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-cream/40">
+        <span className={step === "size" ? "text-cyan" : stepIndex > 0 ? "text-mint" : ""}>
+          1 · Size
         </span>
-        <span className={step === "cluster" ? "text-cyan" : ""}>2 · Cluster</span>
+        <span className="h-px w-6 overflow-hidden bg-white/15">
+          <span
+            className={`block h-full bg-cyan transition-all duration-500 ${
+              stepIndex >= 1 ? "w-full" : "w-1/3"
+            }`}
+          />
+        </span>
+        <span className={step === "team" ? "text-cyan" : stepIndex > 1 ? "text-mint" : ""}>
+          2 · Team
+        </span>
+        <span className="h-px w-6 overflow-hidden bg-white/15">
+          <span
+            className={`block h-full bg-cyan transition-all duration-500 ${
+              stepIndex >= 2 ? "w-full" : stepIndex === 1 ? "w-1/3" : "w-0"
+            }`}
+          />
+        </span>
+        <span className={step === "cluster" ? "text-cyan" : ""}>3 · Cluster</span>
       </div>
 
-      {step === "team" ? (
-        <div className="orig-panel orig-fade-up orig-delay-4 mt-6">
-          <div className="orig-scanline" aria-hidden />
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-200/80">Crew sync</p>
-              <p className="mt-1 text-xs text-cream/45">{filledCount}/{totalFields} fields locked</p>
-            </div>
-            <div className="orig-gauge" title={`Form sync ${progressPercent}%`}>
-              <svg viewBox="0 0 54 54">
-                <circle className="orig-gauge-bg" cx="27" cy="27" r={radius} />
-                <circle
-                  className={`orig-gauge-progress ${allFilled ? "complete" : ""}`}
-                  cx="27"
-                  cy="27"
-                  r={radius}
-                  strokeDasharray={circumference}
-                  strokeDashoffset={strokeDashoffset}
-                />
-              </svg>
-              <div className="orig-gauge-label">
-                <span>{progressPercent}%</span>
-              </div>
-            </div>
-          </div>
-
-          <form className="flex flex-col gap-3.5" onSubmit={continueToCluster}>
-            <Field
-              id="team-name"
-              label="Team name"
-              value={draft.teamName}
-              autoComplete="organization"
-              readOnly={formLocked}
-              onChange={(teamName) => {
-                setDraft({ ...draft, teamName });
-                setFormError(null);
-              }}
-            />
-            <Field
-              id="team-leader"
-              label="Team leader"
-              value={draft.leaderName}
-              autoComplete="name"
-              readOnly={formLocked}
-              onChange={(leaderName) => {
-                setDraft({ ...draft, leaderName });
-                setFormError(null);
-              }}
-            />
-            <div className="mt-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.22em] text-cream/40">
-              <span>Teammates</span>
-              <span className={filledMembersCount === TEAM_MEMBER_COUNT ? "text-gold" : ""}>
-                {filledMembersCount}/{TEAM_MEMBER_COUNT} logged
-              </span>
-            </div>
-            {draft.members.map((name, i) => (
-              <div key={i} className={`orig-crew ${name.trim() ? "is-logged" : ""}`}>
-                <span className="orig-crew-tag">0{i + 1}</span>
-                <input
-                  className="orig-crew-input"
-                  value={name}
-                  maxLength={MAX_TEAM_FIELD_LENGTH}
-                  autoComplete="off"
-                  autoCapitalize="words"
-                  placeholder={`Teammate ${i + 1}`}
-                  readOnly={formLocked}
-                  onChange={(e) => {
-                    const members = [...draft.members] as typeof draft.members;
-                    members[i] = e.target.value;
-                    setDraft({ ...draft, members });
-                    setFormError(null);
-                  }}
-                />
-              </div>
-            ))}
-
-            {(formError || error) && (
-              <p className="orig-alert animate-pop rounded-2xl bg-magenta/15 px-4 py-3 text-center text-sm text-[#ffc1dd] ring-1 ring-magenta/30">
-                {formError ?? error}
-              </p>
-            )}
-
-            <Pressable
-              className={`mt-1 w-full ${launchStep === "Locked" ? "!from-[#9bf6ff] !to-[#7dffb0]" : ""}`}
-              variant={allFilled ? "go" : "ghost"}
-              disabled={!allFilled || formLocked}
-              type="submit"
-            >
-              {launchStep === "Authorizing…" && "Authorizing…"}
-              {launchStep === "3" && "Countdown 3"}
-              {launchStep === "2" && "Countdown 2"}
-              {launchStep === "1" && "Countdown 1"}
-              {launchStep === "Locked" && "Squad locked"}
-              {!launchStep &&
-                (allFilled ? "Continue to choose cluster" : `Fill all fields · ${filledCount}/${totalFields}`)}
-            </Pressable>
-          </form>
-        </div>
-      ) : (
-        <>
-          {team && (
-            <button
-              type="button"
-              onClick={() => setStep("team")}
-              className="orig-panel orig-fade-up mt-6 px-4 py-3 text-left transition duration-200 active:scale-[0.98]"
-            >
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-200/70">
-                Your team · tap to edit
-              </p>
-              <p className="mt-1 font-display text-xl font-bold">{team.teamName}</p>
-              <p className="mt-1 text-sm text-cream/60">
-                Lead · {team.leaderName}
-                <span className="text-cream/35"> · {team.members.join(" · ")}</span>
-              </p>
-            </button>
-          )}
-
-          <div className="orig-panel orig-fade-up orig-delay-2 mt-4">
+      <AnimatePresence mode="wait">
+        {step === "size" ? (
+          <motion.div
+            key="size"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -14 }}
+            transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] }}
+            className="orig-panel mt-6"
+          >
             <div className="orig-scanline" aria-hidden />
-            <div className="mb-3 flex items-end justify-between gap-3">
-              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-cream/45">
-                {clusterCount < 1 ? "Waiting on host" : "Choose cluster"}
-              </p>
-              {clusterCount > 0 && (
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gold">
-                  {Object.keys(occupied).length}/{clusterCount} held
-                </p>
-              )}
-            </div>
-            {clusterCount < 1 ? (
-              <div className="px-2 py-6 text-center">
-                <div className="orig-radar mx-auto mb-3" aria-hidden />
-                <p className="font-display text-2xl font-bold">No clusters yet.</p>
-                <p className="mt-2 text-sm leading-relaxed text-cream/60">
-                  The host is setting the room size. This grid unlocks when they lock the count.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-5 gap-2.5">
-                {Array.from({ length: clusterCount }, (_, i) => i + 1).map((n) => {
-                  const selected = resume === n;
-                  const taken = Boolean(occupied[n]) && resume !== n;
-                  const color = hue(n, clusterCount);
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-200/80">
+              Crew size
+            </p>
+            <h2 className="font-display mt-2 text-2xl font-bold">How many on this phone?</h2>
+            <p className="mt-2 text-sm text-cream/60">
+              Include the leader. Short teams are fine — you don’t need five.
+            </p>
+            <div className="mt-5 grid grid-cols-5 gap-2">
+              {Array.from({ length: MAX_TEAM_SIZE - MIN_TEAM_SIZE + 1 }, (_, i) => MIN_TEAM_SIZE + i).map(
+                (n) => {
+                  const on = teamSize === n;
                   return (
                     <button
                       key={n}
                       type="button"
-                      disabled={!team || busy}
-                      onClick={() => team && onJoin(n, team)}
-                      className={`orig-node aspect-square rounded-2xl text-sm font-extrabold ${
-                        selected ? "is-mine" : ""
-                      } ${taken ? "is-taken" : ""} ${busy ? "opacity-80" : ""}`}
-                      style={{
-                        background: taken
-                          ? "radial-gradient(circle at 50% 60%, rgba(255,90,168,0.35), #14102a)"
-                          : `radial-gradient(circle at 35% 30%, rgba(255,255,255,0.55), transparent 32%), radial-gradient(circle at 50% 60%, ${color}, #14102a)`,
-                        boxShadow: selected ? `0 0 18px ${color}` : "inset 0 0 12px rgba(0,0,0,0.25)",
-                        color: taken ? "#ffc1dd" : "#071018",
-                        animationDelay: `${n * 0.03}s`,
-                      }}
+                      onClick={() => applyTeamSize(n)}
+                      className={`aspect-square rounded-2xl text-lg font-extrabold ring-1 transition ${
+                        on
+                          ? "bg-cyan/20 text-cyan ring-cyan/50"
+                          : "bg-white/6 text-cream/70 ring-white/10 active:scale-95"
+                      }`}
                     >
-                      {busy && selected ? "…" : n}
-                      {taken && <span className="orig-node-tag">held</span>}
-                      {selected && <span className="orig-node-tag mint">you</span>}
+                      {n}
                     </button>
                   );
-                })}
-              </div>
-            )}
-          </div>
-
-          {resume != null && team && (
-            <Pressable className="mt-6 w-full" variant="go" disabled={busy} onClick={() => onJoin(resume, team)}>
-              {busy ? "Joining…" : `Resume cluster ${resume}`}
-            </Pressable>
-          )}
-
-          {error && (
-            <p className="orig-alert animate-pop mt-4 rounded-2xl bg-magenta/15 px-4 py-3 text-center text-sm text-[#ffc1dd] ring-1 ring-magenta/30">
-              {error}
+                },
+              )}
+            </div>
+            <p className="mt-3 text-center text-xs text-cream/45">
+              {teamSize === 1
+                ? "Solo node — just the leader."
+                : `${teamSize} people · 1 leader + ${teamSize - 1} teammate${teamSize - 1 === 1 ? "" : "s"}`}
             </p>
-          )}
-        </>
-      )}
+            <Pressable className="mt-5 w-full" variant="go" onClick={continueFromSize}>
+              Continue to crew details
+            </Pressable>
+          </motion.div>
+        ) : step === "team" ? (
+          <motion.div
+            key="team"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -14 }}
+            transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] }}
+            className="orig-panel mt-6"
+          >
+            <div className="orig-scanline" aria-hidden />
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-200/80">
+                  Crew sync
+                </p>
+                <p className="mt-1 text-xs text-cream/45">
+                  {filledCount}/{totalFields} fields locked
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setStep("size")}
+                  className="mt-1 text-[10px] font-bold uppercase tracking-[0.18em] text-gold/80"
+                >
+                  {teamSize} people · change
+                </button>
+              </div>
+              <div className="orig-gauge" title={`Form sync ${progressPercent}%`}>
+                <svg viewBox="0 0 54 54">
+                  <circle className="orig-gauge-bg" cx="27" cy="27" r={radius} />
+                  <circle
+                    className={`orig-gauge-progress ${allFilled ? "complete" : ""}`}
+                    cx="27"
+                    cy="27"
+                    r={radius}
+                    strokeDasharray={circumference}
+                    strokeDashoffset={strokeDashoffset}
+                  />
+                </svg>
+                <div className="orig-gauge-label">
+                  <span>{progressPercent}%</span>
+                </div>
+              </div>
+            </div>
+
+            <form className="flex flex-col gap-3.5" onSubmit={continueToCluster}>
+              <Field
+                id="team-name"
+                label="Team name"
+                value={draft.teamName}
+                autoComplete="organization"
+                onChange={(teamName) => {
+                  setDraft({ ...draft, teamName });
+                  setFormError(null);
+                }}
+              />
+              <Field
+                id="team-leader"
+                label="Team leader"
+                value={draft.leaderName}
+                autoComplete="name"
+                onChange={(leaderName) => {
+                  setDraft({ ...draft, leaderName });
+                  setFormError(null);
+                }}
+              />
+              {teammateSlots > 0 && (
+                <>
+                  <div className="mt-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.22em] text-cream/40">
+                    <span>Teammates</span>
+                    <span className={filledMembersCount === teammateSlots ? "text-gold" : ""}>
+                      {filledMembersCount}/{teammateSlots} logged
+                    </span>
+                  </div>
+                  {draft.members.map((name, i) => (
+                    <div key={i} className={`orig-crew ${name.trim() ? "is-logged" : ""}`}>
+                      <span className="orig-crew-tag">0{i + 1}</span>
+                      <input
+                        className="orig-crew-input"
+                        value={name}
+                        maxLength={MAX_TEAM_FIELD_LENGTH}
+                        autoComplete="off"
+                        autoCapitalize="words"
+                        placeholder={`Teammate ${i + 1}`}
+                        onChange={(e) => {
+                          const members = [...draft.members];
+                          members[i] = e.target.value;
+                          setDraft({ ...draft, members });
+                          setFormError(null);
+                        }}
+                      />
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {(formError || error || hasDuplicates) && (
+                <p className="orig-alert animate-pop rounded-2xl bg-magenta/15 px-4 py-3 text-center text-sm text-[#ffc1dd] ring-1 ring-magenta/30">
+                  {formError ??
+                    error ??
+                    (hasDuplicates ? "Each person needs a unique name — no duplicates." : null)}
+                </p>
+              )}
+
+              <Pressable
+                className="mt-1 w-full"
+                variant={allFilled ? "go" : "ghost"}
+                disabled={!allFilled}
+                type="submit"
+              >
+                {allFilled
+                  ? "Continue to choose cluster"
+                  : hasDuplicates
+                    ? "Fix duplicate names"
+                    : `Fill all fields · ${filledCount}/${totalFields}`}
+              </Pressable>
+            </form>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="cluster"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -14 }}
+            transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] }}
+            className="w-full"
+          >
+            {team && (
+              <button
+                type="button"
+                onClick={() => setStep("team")}
+                className="orig-panel mt-6 block w-full px-4 py-3 text-left transition duration-200 active:scale-[0.98]"
+              >
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-200/70">
+                  Your team · tap to edit
+                </p>
+                <p className="mt-1 font-display text-xl font-bold">{team.teamName}</p>
+                <p className="mt-1 text-sm text-cream/60">
+                  Lead · {team.leaderName}
+                  {team.members.length > 0 && (
+                    <span className="text-cream/35"> · {team.members.join(" · ")}</span>
+                  )}
+                </p>
+              </button>
+            )}
+
+            <div className="orig-panel mt-4 w-full">
+              <div className="orig-scanline" aria-hidden />
+              <div className="mb-3 flex items-end justify-between gap-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-cream/45">
+                  {clusterCount < 1 ? "Waiting on host" : "Choose cluster"}
+                </p>
+                {clusterCount > 0 && (
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gold">
+                    {Object.keys(occupied).length}/{clusterCount} held
+                  </p>
+                )}
+              </div>
+              {clusterCount < 1 ? (
+                <div className="px-2 py-6 text-center">
+                  <div className="orig-radar mx-auto mb-3" aria-hidden />
+                  <p className="font-display text-2xl font-bold">No clusters yet.</p>
+                  <p className="mt-2 text-sm leading-relaxed text-cream/60">
+                    The host is setting the room size. This grid unlocks when they lock the count.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-5 gap-2.5">
+                  {Array.from({ length: clusterCount }, (_, i) => i + 1).map((n) => {
+                    const selected = resume === n;
+                    const taken = Boolean(occupied[n]) && resume !== n;
+                    const color = hue(n, clusterCount);
+                    return (
+                      <button
+                        key={n}
+                        type="button"
+                        disabled={!team || busy}
+                        onClick={() => team && onJoin(n, team)}
+                        className={`orig-node aspect-square rounded-2xl text-sm font-extrabold ${
+                          selected ? "is-mine" : ""
+                        } ${taken ? "is-taken" : ""} ${busy ? "opacity-80" : ""}`}
+                        style={{
+                          background: taken
+                            ? "radial-gradient(circle at 50% 60%, rgba(255,90,168,0.35), #14102a)"
+                            : `radial-gradient(circle at 35% 30%, rgba(255,255,255,0.55), transparent 32%), radial-gradient(circle at 50% 60%, ${color}, #14102a)`,
+                          boxShadow: selected ? `0 0 18px ${color}` : "inset 0 0 12px rgba(0,0,0,0.25)",
+                          color: taken ? "#ffc1dd" : "#071018",
+                          animationDelay: `${n * 0.03}s`,
+                        }}
+                      >
+                        {busy && selected ? "…" : n}
+                        {taken && <span className="orig-node-tag">held</span>}
+                        {selected && <span className="orig-node-tag mint">you</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {resume != null && team && (
+              <Pressable className="mt-6 w-full" variant="go" disabled={busy} onClick={() => onJoin(resume, team)}>
+                {busy ? "Joining…" : `Resume cluster ${resume}`}
+              </Pressable>
+            )}
+
+            {error && (
+              <p className="orig-alert animate-pop mt-4 rounded-2xl bg-magenta/15 px-4 py-3 text-center text-sm text-[#ffc1dd] ring-1 ring-magenta/30">
+                {error}
+              </p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <p className="mt-auto pt-6 text-center text-[11px] leading-relaxed text-cream/40">
-        {step === "team"
-          ? `${TEAM_MEMBER_COUNT + 1} names. One phone. The leader holds the device.`
-          : "If this cluster is already live, rejoining with this phone will take over the session."}
+        {step === "size"
+          ? "Count everyone sharing this phone, including the leader."
+          : step === "team"
+            ? `${teamSize} name${teamSize === 1 ? "" : "s"}. One phone. The leader holds the device.`
+            : "If this cluster is already live, rejoining with this phone will take over the session."}
       </p>
     </div>
   );

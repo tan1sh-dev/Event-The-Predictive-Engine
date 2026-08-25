@@ -3,6 +3,8 @@ import { MAX_CLUSTER_COUNT, normalizeTeamDetails, type TeamDetails } from "@engi
 export const TOKEN_PREFIX = "engine.token.";
 export const LAST_CLUSTER_KEY = "engine.lastCluster";
 export const TEAM_KEY = "engine.team";
+/** sessionStorage: after a host reset/kick, always reopen the team-details form. */
+export const JOIN_SCREEN_KEY = "engine.joinScreen";
 
 export function tokenKey(clusterNumber: number): string {
   return `${TOKEN_PREFIX}${clusterNumber}`;
@@ -67,6 +69,30 @@ export function clearSession(): void {
       }
     }
     for (const key of keys) localStorage.removeItem(key);
+  } catch {
+    /* private mode */
+  }
+}
+
+export function markTeamScreen(): void {
+  try {
+    sessionStorage.setItem(JOIN_SCREEN_KEY, "team");
+  } catch {
+    /* private mode */
+  }
+}
+
+export function loadJoinScreen(): "team" | null {
+  try {
+    return sessionStorage.getItem(JOIN_SCREEN_KEY) === "team" ? "team" : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearJoinScreen(): void {
+  try {
+    sessionStorage.removeItem(JOIN_SCREEN_KEY);
   } catch {
     /* private mode */
   }

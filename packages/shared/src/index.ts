@@ -32,6 +32,7 @@ export type {
   RoundConfig,
   RoundId,
   ServerToClientEvents,
+  SessionResetReason,
   SocketData,
   SubmitVotePayload,
   TeamDetails,
@@ -52,6 +53,7 @@ export {
   MID_WAGER,
   MIN_CLUSTER_COUNT,
   NO_VOTE_ALPHA,
+  POWER_GRANT_DURATION_MS,
   R0_CLUE_DURATION_MS,
   R0_VOTE_DURATION_MS,
   R2_CLUE_DURATION_MS,
@@ -64,9 +66,14 @@ export {
 
 export {
   MAX_TEAM_FIELD_LENGTH,
+  MAX_TEAM_SIZE,
+  MIN_TEAM_SIZE,
   TEAM_MEMBER_COUNT,
+  clampTeamSize,
   emptyTeamDraft,
+  hasDuplicatePersonNames,
   normalizeTeamDetails,
+  resizeMembers,
 } from "./team.ts";
 
 export {

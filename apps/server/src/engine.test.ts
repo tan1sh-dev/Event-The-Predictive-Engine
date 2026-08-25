@@ -49,11 +49,41 @@ const SAMPLE_TEAM = {
 };
 
 describe("normalizeTeamDetails", () => {
-  it("requires a team name, leader, and exactly four teammates", () => {
+  it("requires a team name and leader, with 0–4 unique teammates", () => {
     assert.deepEqual(normalizeTeamDetails(SAMPLE_TEAM), SAMPLE_TEAM);
-    assert.equal(normalizeTeamDetails({ ...SAMPLE_TEAM, members: ["A", "B", "C"] }), null);
+    assert.deepEqual(
+      normalizeTeamDetails({ ...SAMPLE_TEAM, members: ["A", "B"] }),
+      { ...SAMPLE_TEAM, members: ["A", "B"] },
+    );
+    assert.deepEqual(
+      normalizeTeamDetails({ ...SAMPLE_TEAM, members: [] }),
+      { ...SAMPLE_TEAM, members: [] },
+    );
+    assert.equal(
+      normalizeTeamDetails({
+        ...SAMPLE_TEAM,
+        members: ["A", "B", "C", "D", "E"],
+      }),
+      null,
+    );
+    assert.equal(normalizeTeamDetails({ ...SAMPLE_TEAM, members: ["A", ""] }), null);
     assert.equal(normalizeTeamDetails({ ...SAMPLE_TEAM, teamName: "  " }), null);
     assert.equal(normalizeTeamDetails({ ...SAMPLE_TEAM, leaderName: "" }), null);
+    assert.equal(
+      normalizeTeamDetails({
+        ...SAMPLE_TEAM,
+        leaderName: "Tanish M",
+        members: ["Tanish M", "Virat Kohli", "Rohit Sharma", "Jasprit Bumrah"],
+      }),
+      null,
+    );
+    assert.equal(
+      normalizeTeamDetails({
+        ...SAMPLE_TEAM,
+        members: ["Maya", "maya"],
+      }),
+      null,
+    );
   });
 });
 
@@ -228,13 +258,18 @@ describe("voting + AdaBoost round", () => {
     const noWager = engine.submitVote(1, "r0-q1", "c", null);
     assert.equal(noWager.ok, false);
     if (!noWager.ok) assert.equal(noWager.error, "wager_required");
-    const mid = engine.submitVote(1, "r0-q1", "c", 1.0);
-    assert.equal(mid.ok, true);
-    assert.equal(engine.getCluster(1)?.pendingVote?.wager, 1);
     const low = engine.submitVote(1, "r0-q1", "c", 0.2);
     assert.equal(low.ok, false);
     const high = engine.submitVote(1, "r0-q1", "c", 2);
     assert.equal(high.ok, false);
+    const mid = engine.submitVote(1, "r0-q1", "c", 1.0);
+    assert.equal(mid.ok, true);
+    assert.equal(engine.getCluster(1)?.pendingVote?.wager, 1);
+    const update = engine.submitVote(1, "r0-q1", "a", 0.5);
+    assert.equal(update.ok, false);
+    if (!update.ok) assert.equal(update.error, "already_locked");
+    assert.equal(engine.getCluster(1)?.pendingVote?.optionId, "c");
+    assert.equal(engine.getCluster(1)?.pendingVote?.wager, 1);
   });
 
   it("starts a 90s clock on scored questions and locks when it expires", () => {
@@ -456,6 +491,34 @@ describe("power-ups", () => {
     const denied = engine.claimPower(4, "amplify");
     assert.equal(denied.ok, false);
     if (!denied.ok) assert.equal(denied.error, "not_top_three");
+  });
+
+  it("gives the top 3 a 15-second pick window after R3, then advances", () => {
+    let now = 5_000_000;
+    const engine = new GameEngine({ clusterCount: 4, now: () => now });
+    engine.joinCluster(1, undefined, "s1");
+    engine.joinCluster(2, undefined, "s2");
+    engine.joinCluster(3, undefined, "s3");
+    engine.joinCluster(4, undefined, "s4");
+    engine.setWeight(1, 8);
+    engine.setWeight(2, 5);
+    engine.setWeight(3, 4);
+    engine.setWeight(4, 1);
+    goTo(engine, (s) => s.phase === "power_grant");
+    const snap = engine.snapshot();
+    assert.equal(snap.powerGrantDeadlineAt, now + 15_000);
+    assert.equal(engine.clock().powerGrantRemainingMs, 15_000);
+    assert.equal(engine.clusterView(1)?.canClaimPower, true);
+    assert.equal(engine.clusterView(4)?.canClaimPower, false);
+
+    now += 14_999;
+    assert.equal(engine.expirePowerGrant(), false);
+    now += 1;
+    assert.equal(engine.claimPower(2, "amplify").ok, false);
+    assert.equal(engine.expirePowerGrant(), true);
+    assert.equal(engine.step.phase, "clue");
+    assert.equal(engine.step.roundId, "R4");
+    assert.equal(engine.snapshot().powerGrantDeadlineAt, null);
   });
 
   it("Insurance zeroes the next wrong update; Amplify doubles alpha on the next correct", () => {

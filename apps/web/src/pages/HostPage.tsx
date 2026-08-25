@@ -4,6 +4,7 @@ import {
   MAX_CLUSTER_COUNT,
   MIN_CLUSTER_COUNT,
   PHASE_SEQUENCE,
+  POWER_GRANT_DURATION_MS,
   clueDurationForRound,
   voteDurationForRound,
   type GameSnapshot,
@@ -11,7 +12,6 @@ import {
   type PowerUp,
 } from "@engine/shared";
 import Pressable from "../components/Pressable.tsx";
-import SparkleCursor from "../components/SparkleCursor.tsx";
 import { useEngineSocket } from "../hooks/useClusterSession.ts";
 import { LETTER, PHASE_LABEL } from "../lib/labels.ts";
 import VoteTimer, { useVoteRemainingMs } from "../components/VoteTimer.tsx";
@@ -143,6 +143,11 @@ export default function HostPage() {
 
   const remainingMs = useVoteRemainingMs(snap?.voteDeadlineAt, snap?.serverTime, "vote");
   const clueRemainingMs = useVoteRemainingMs(snap?.clueDeadlineAt, snap?.serverTime, "clue");
+  const powerGrantRemainingMs = useVoteRemainingMs(
+    snap?.powerGrantDeadlineAt,
+    snap?.serverTime,
+    "power",
+  );
 
   const nextLabel = (() => {
     if (!snap) return "Next";
@@ -177,9 +182,7 @@ export default function HostPage() {
 
   if (!authed) {
     return (
-      <>
-        <SparkleCursor theme="teal" />
-        <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 px-6">
+      <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 px-6">
         <p className="text-[11px] font-bold uppercase tracking-[0.32em] text-mint">Host</p>
         <h1 className="font-display text-4xl">Control the engine</h1>
         <input
@@ -195,18 +198,12 @@ export default function HostPage() {
         </Pressable>
         {error && <p className="text-sm text-magenta">{error}</p>}
         <p className="text-xs text-cream/40">Default password is rvce_host unless you changed HOST_PASSWORD.</p>
-        </div>
-      </>
+      </div>
     );
   }
 
   if (!snap) {
-    return (
-      <>
-        <SparkleCursor theme="teal" />
-        <p className="grid min-h-dvh place-items-center">Connecting…</p>
-      </>
-    );
+    return <p className="grid min-h-dvh place-items-center">Connecting…</p>;
   }
 
   const needsReveal =
@@ -214,8 +211,6 @@ export default function HostPage() {
   const question = snap.question;
 
   return (
-    <>
-      <SparkleCursor theme="teal" />
       <div className="mx-auto min-h-dvh max-w-6xl px-4 py-5 pb-10">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -257,6 +252,16 @@ export default function HostPage() {
                 totalMs={voteDurationForRound(snap.roundId)}
                 compact
                 kicker="Question"
+              />
+            </div>
+          )}
+          {powerGrantRemainingMs != null && (
+            <div className="mt-2 flex justify-end">
+              <VoteTimer
+                remainingMs={powerGrantRemainingMs}
+                totalMs={POWER_GRANT_DURATION_MS}
+                compact
+                kicker="Top 3 pick"
               />
             </div>
           )}
@@ -424,7 +429,11 @@ export default function HostPage() {
 
       {snap.phase === "power_grant" && (
         <section className="mt-6 rounded-3xl bg-white/6 p-5 ring-1 ring-white/10">
-          <h2 className="font-display text-2xl">Grant powers to top 3</h2>
+          <h2 className="font-display text-2xl">Top 3 are picking (15s)</h2>
+          <p className="mt-2 text-sm text-cream/60">
+            After Round 3 weights, only the heaviest three nodes see the boosts. Everyone else
+            stays on the weight screen. The window closes automatically.
+          </p>
           <div className="mt-3 flex flex-col gap-3">
             {snap.topClusterNumbers.map((n) => {
               const c = snap.clusters.find((x) => x.number === n);
@@ -511,6 +520,5 @@ export default function HostPage() {
         </table>
       </section>
       </div>
-    </>
   );
 }
