@@ -304,14 +304,15 @@ button {
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 0.65rem;
   min-height: 4.6rem;
 }
 .orig-club-lockup-label {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.15rem;
   margin: 0;
   padding-top: 0;
@@ -321,19 +322,16 @@ button {
   text-transform: uppercase;
   color: rgb(165 243 252 / 0.88);
   line-height: 1.15;
-  text-align: center;
+  text-align: left;
 }
 .orig-club-logo {
-  position: absolute;
-  left: 0;
-  top: 50%;
+  position: relative;
   z-index: 1;
   display: grid;
   place-items: center;
   width: 4.6rem;
   height: 4.6rem;
   flex-shrink: 0;
-  transform: translateY(-50%);
 }
 .orig-club-logo-glow {
   position: absolute;

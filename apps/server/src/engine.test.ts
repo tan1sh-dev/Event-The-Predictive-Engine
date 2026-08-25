@@ -270,6 +270,36 @@ describe("voting + AdaBoost round", () => {
     if (!update.ok) assert.equal(update.error, "already_locked");
     assert.equal(engine.getCluster(1)?.pendingVote?.optionId, "c");
     assert.equal(engine.getCluster(1)?.pendingVote?.wager, 1);
+    assert.equal(engine.getCluster(1)?.pendingVote?.questionId, "r0-q1");
+  });
+
+  it("reveal shows this question's lock, not the previous question's", () => {
+    const engine = new GameEngine({ clusterCount: 4 });
+    engine.joinCluster(1, undefined, "s1");
+    playQuestion(engine, [{ cluster: 1, option: "a", wager: 0.5 }], "a");
+    const first = engine.getCluster(1)?.lastResult;
+    assert.equal(first?.questionId, "r0-q1");
+    assert.equal(first?.optionId, "a");
+    assert.equal(first?.wager, 0.5);
+
+    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R0" && s.questionIndex === 2);
+    const q = engine.getCurrentQuestion();
+    assert.equal(q?.id, "r0-q2");
+    const locked = engine.submitVote(1, q!.id, "c", 1.5);
+    assert.equal(locked.ok, true);
+    assert.equal(engine.getCluster(1)?.pendingVote?.optionId, "c");
+    assert.equal(engine.getCluster(1)?.pendingVote?.wager, 1.5);
+    assert.equal(engine.getCluster(1)?.lastResult?.optionId, "a");
+
+    engine.advance();
+    engine.advance();
+    const revealed = engine.reveal("d");
+    assert.equal(revealed.ok, true);
+    const result = engine.getCluster(1)?.lastResult;
+    assert.equal(result?.questionId, "r0-q2");
+    assert.equal(result?.optionId, "c");
+    assert.equal(result?.wager, 1.5);
+    assert.equal(result?.correct, false);
   });
 
   it("starts a 90s clock on scored questions and locks when it expires", () => {

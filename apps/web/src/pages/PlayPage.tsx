@@ -44,7 +44,7 @@ export default function PlayPage() {
             <Hud view={session.view} connected={session.connected} />
             <AnimatePresence mode="wait">
               <motion.div
-                key={session.view.snapshot.phase + String(session.view.snapshot.questionIndex)}
+                key={`${session.view.snapshot.roundId}-${session.view.snapshot.phase}-${session.view.snapshot.questionIndex}`}
                 initial={{ opacity: 0, y: 16, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -10, scale: 0.98 }}

@@ -95,6 +95,23 @@ export function useClusterSession(socket: GameSocket) {
         return { ...prev, snapshot };
       });
     };
+    const onReveal = (payload: {
+      questionId: string;
+      correctOptionId: string;
+      yourResult: ClusterView["lastResult"];
+    }) => {
+      setView((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          lastResult: payload.yourResult,
+          snapshot: {
+            ...prev.snapshot,
+            correctOptionId: payload.correctOptionId,
+          },
+        };
+      });
+    };
     const returnToJoinGate = (opts?: { teamScreen?: boolean }) => {
       joinEpoch.current += 1;
       allowView.current = false;
@@ -184,6 +201,7 @@ export function useClusterSession(socket: GameSocket) {
 
     socket.on("clusterView", onView);
     socket.on("snapshot", onSnap);
+    socket.on("revealResult", onReveal);
     socket.on("sessionReset", onSessionReset);
     socket.on("error", onError);
     socket.on("connect", resume);
@@ -192,6 +210,7 @@ export function useClusterSession(socket: GameSocket) {
     return () => {
       socket.off("clusterView", onView);
       socket.off("snapshot", onSnap);
+      socket.off("revealResult", onReveal);
       socket.off("sessionReset", onSessionReset);
       socket.off("error", onError);
       socket.off("connect", resume);

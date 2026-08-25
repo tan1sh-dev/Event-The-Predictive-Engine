@@ -20,6 +20,18 @@ import WeightOrb from "../components/WeightOrb.tsx";
 
 const LETTER: Record<string, string> = { a: "A", b: "B", c: "C", d: "D" };
 
+function optionLetter(optionId: string | null | undefined): string {
+  if (!optionId) return "—";
+  return LETTER[optionId] ?? optionId.toUpperCase();
+}
+
+function optionLine(question: Question | null | undefined, optionId: string | null | undefined): string {
+  if (!optionId) return "No lock";
+  const letter = optionLetter(optionId);
+  const label = question?.options.find((o) => o.id === optionId)?.label;
+  return label ? `${letter} — ${label}` : letter;
+}
+
 const POWERS: { id: PowerUp; title: string; body: string; variant: "mint" | "gold" | "danger" }[] =
   [
     {
@@ -121,7 +133,14 @@ function VoteForm({
     setOption(pendingOption);
     setWager(pendingWager ?? MID_WAGER);
     setLockedIn(Boolean(pendingOption));
-  }, [pendingOption, pendingWager, question.id]);
+  }, [question.id]);
+
+  useEffect(() => {
+    if (!pendingOption) return;
+    setOption(pendingOption);
+    setWager(pendingWager ?? MID_WAGER);
+    setLockedIn(true);
+  }, [pendingOption, pendingWager]);
 
   const ready = Boolean(option) && (!wagerRequired || normalizeWager(wager) != null);
   const frozen = lockedIn || expired;
@@ -341,8 +360,18 @@ export default function PhaseView({
         <VoteForm
           question={question}
           wagerRequired={snapshot.phase === "voting_open" && question.wagerRequired}
-          pendingOption={view.pendingVote?.optionId ?? null}
-          pendingWager={view.pendingVote?.wager ?? null}
+          pendingOption={
+            view.pendingVote &&
+            (!view.pendingVote.questionId || view.pendingVote.questionId === question.id)
+              ? view.pendingVote.optionId
+              : null
+          }
+          pendingWager={
+            view.pendingVote &&
+            (!view.pendingVote.questionId || view.pendingVote.questionId === question.id)
+              ? view.pendingVote.wager
+              : null
+          }
           split={view.crowdSplit}
           expired={expired}
           onVote={onVote}
@@ -352,7 +381,12 @@ export default function PhaseView({
   }
 
   if (snapshot.phase === "voting_locked" || snapshot.phase === "final_inference_locked") {
-    if (!view.pendingVote) {
+    const pending =
+      view.pendingVote &&
+      (!view.pendingVote.questionId || view.pendingVote.questionId === question?.id)
+        ? view.pendingVote
+        : null;
+    if (!pending) {
       return (
         <WaitCard
           kicker="No signal"
@@ -361,39 +395,92 @@ export default function PhaseView({
         />
       );
     }
-    const letter = LETTER[view.pendingVote.optionId] ?? view.pendingVote.optionId;
     return (
       <WaitCard
         kicker="Locked"
-        title={`${letter} is in the engine.`}
+        title={`${optionLetter(pending.optionId)} is in the engine.`}
         body={
-          view.pendingVote.wager
-            ? `Wager α = ${view.pendingVote.wager}. Hold the phone. The host is about to reveal.`
-            : "No wager on the final inference. The room is frozen. Watch the projector."
+          pending.wager != null
+            ? `${optionLine(question, pending.optionId)}. Wager α = ${pending.wager.toFixed(1)}. Hold the phone — the host is about to reveal.`
+            : `${optionLine(question, pending.optionId)}. No wager on the final inference. The room is frozen. Watch the projector.`
         }
       />
     );
   }
 
   if (snapshot.phase === "reveal") {
-    const result = view.lastResult;
-    const correct = snapshot.correctOptionId
-      ? (LETTER[snapshot.correctOptionId] ?? snapshot.correctOptionId)
-      : "?";
-    const hit = result?.correct;
+    const scored =
+      snapshot.correctOptionId &&
+      view.lastResult &&
+      view.lastResult.questionId === question?.id
+        ? view.lastResult
+        : null;
+    const pending =
+      view.pendingVote &&
+      (!view.pendingVote.questionId || view.pendingVote.questionId === question?.id)
+        ? view.pendingVote
+        : null;
+
+    if (!scored) {
+      if (!pending) {
+        return (
+          <WaitCard
+            kicker="Reveal"
+            title="Waiting on the host."
+            body="You didn’t lock a signal this question. When the host reveals, you’ll see the correct answer."
+          />
+        );
+      }
+      return (
+        <WaitCard
+          kicker="Locked · waiting"
+          title={`${optionLetter(pending.optionId)} is locked in.`}
+          body={
+            pending.wager != null
+              ? `Your pick: ${optionLine(question, pending.optionId)}. Wager α = ${pending.wager.toFixed(1)}. The host has not revealed yet.`
+              : `Your pick: ${optionLine(question, pending.optionId)}. The host has not revealed yet.`
+          }
+        />
+      );
+    }
+
+    const hit = scored.correct;
+    const lockedId = scored.optionId || null;
     return (
-      <div className={`mt-8 rounded-[28px] p-6 text-center ring-1 ${hit ? "animate-pop bg-mint/12 ring-mint/40" : "animate-shake bg-magenta/12 ring-magenta/40"}`}>
+      <div
+        className={`mt-8 rounded-[28px] p-6 text-center ring-1 ${
+          hit ? "animate-pop bg-mint/12 ring-mint/40" : "animate-shake bg-magenta/12 ring-magenta/40"
+        }`}
+      >
         <p className="text-[11px] font-bold uppercase tracking-[0.28em]">
-          {hit ? "Hit" : "Miss"}
+          {lockedId ? (hit ? "Hit" : "Miss") : "Missed"}
         </p>
-        <h2 className="font-display mt-2 text-4xl font-bold">Answer {correct}</h2>
-        {result && (
-          <p className="mt-3 text-sm text-cream/70">
-            You sent {result.optionId ? LETTER[result.optionId] ?? result.optionId : "nothing"} · α{" "}
-            {result.alpha}
-            {result.powerApplied ? ` · ${result.powerApplied} armed` : ""}
+        <h2 className="font-display mt-2 text-4xl font-bold">
+          {hit ? "You got it." : "Not this one."}
+        </h2>
+        <div className="mt-5 space-y-3 text-sm leading-relaxed text-cream/80">
+          <p>
+            <span className="block text-[11px] font-bold uppercase tracking-[0.22em] text-cream/40">
+              Your lock
+            </span>
+            {lockedId
+              ? `${optionLine(question, lockedId)}${
+                  scored.wager != null ? ` · α ${scored.wager.toFixed(1)}` : ""
+                }`
+              : "You didn’t lock in"}
           </p>
-        )}
+          <p>
+            <span className="block text-[11px] font-bold uppercase tracking-[0.22em] text-cream/40">
+              Correct answer
+            </span>
+            {optionLine(question, snapshot.correctOptionId)}
+          </p>
+        </div>
+        {scored.powerApplied ? (
+          <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.22em] text-cream/50">
+            {scored.powerApplied} armed
+          </p>
+        ) : null}
         <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.22em] text-cream/40">
           Weights update at the end of the round
         </p>

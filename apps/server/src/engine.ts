@@ -306,15 +306,16 @@ export class GameEngine {
     if (!question) return 0;
     let n = 0;
     for (const c of this.clusters.values()) {
-      if (c.pendingVote && this.voteMatchesQuestion(c.pendingVote, question)) {
-        n += 1;
-      }
+      if (this.voteForQuestion(c.pendingVote, question)) n += 1;
     }
     return n;
   }
 
-  private voteMatchesQuestion(vote: PendingVote, question: Question): boolean {
-    return question.options.some((o) => o.id === vote.optionId);
+  private voteForQuestion(vote: PendingVote | null, question: Question | null): PendingVote | null {
+    if (!vote || !question) return null;
+    if (vote.questionId && vote.questionId !== question.id) return null;
+    if (!question.options.some((o) => o.id === vote.optionId)) return null;
+    return vote;
   }
 
   submitVote(
@@ -363,7 +364,7 @@ export class GameEngine {
         message: "This is not the active question.",
       };
     }
-    if (cluster.pendingVote && this.voteMatchesQuestion(cluster.pendingVote, question)) {
+    if (this.voteForQuestion(cluster.pendingVote, question)) {
       return {
         ok: false,
         error: "already_locked",
@@ -396,6 +397,7 @@ export class GameEngine {
     }
 
     const pendingVote: PendingVote = {
+      questionId,
       optionId,
       wager: alpha,
       submittedAt: this.now(),
@@ -419,7 +421,7 @@ export class GameEngine {
     let n = 0;
     for (const c of this.clusters.values()) {
       if (c.power?.type === "foresight") continue;
-      if (c.pendingVote && this.voteMatchesQuestion(c.pendingVote, question)) n += 1;
+      if (this.voteForQuestion(c.pendingVote, question)) n += 1;
     }
     return n;
   }
@@ -440,9 +442,7 @@ export class GameEngine {
       (c) => c.socketId && c.power?.type !== "foresight",
     );
     if (crowd.length === 0) return true;
-    return crowd.every(
-      (c) => c.pendingVote && this.voteMatchesQuestion(c.pendingVote, question),
-    );
+    return crowd.every((c) => this.voteForQuestion(c.pendingVote, question));
   }
 
   voteSplit(question?: Question | null, opts?: { crowdOnly?: boolean }): VoteSplitEntry[] {
@@ -453,11 +453,9 @@ export class GameEngine {
     for (const opt of q.options) counts.set(opt.id, 0);
     for (const c of this.clusters.values()) {
       if (crowdOnly && c.power?.type === "foresight") continue;
-      if (c.pendingVote && q.options.some((o) => o.id === c.pendingVote!.optionId)) {
-        counts.set(
-          c.pendingVote.optionId,
-          (counts.get(c.pendingVote.optionId) ?? 0) + 1,
-        );
+      const vote = this.voteForQuestion(c.pendingVote, q);
+      if (vote) {
+        counts.set(vote.optionId, (counts.get(vote.optionId) ?? 0) + 1);
       }
     }
     const total = [...counts.values()].reduce((a, b) => a + b, 0);
@@ -611,11 +609,7 @@ export class GameEngine {
 
     const results = new Map<number, QuestionResult>();
     for (const cluster of this.clusters.values()) {
-      const vote = cluster.pendingVote;
-      const voted =
-        vote && question.options.some((o) => o.id === vote.optionId)
-          ? vote
-          : null;
+      const voted = this.voteForQuestion(cluster.pendingVote, question);
       const correct = voted ? voted.optionId === correctOptionId : false;
       const y: 1 | -1 = correct ? 1 : -1;
       const alpha = voted ? (voted.wager ?? 0.5) : NO_VOTE_ALPHA;
@@ -749,7 +743,7 @@ export class GameEngine {
     for (const opt of question.options) scores.set(opt.id, 0);
 
     for (const cluster of this.clusters.values()) {
-      const vote = cluster.pendingVote;
+      const vote = this.voteForQuestion(cluster.pendingVote, question);
       if (!vote) continue;
       const w = cluster.frozenWeight ?? cluster.weight;
       scores.set(vote.optionId, (scores.get(vote.optionId) ?? 0) + w);
@@ -1040,11 +1034,7 @@ export class GameEngine {
       weight: c.weight,
       visualWeight: c.weight / max,
       normalizedWeight: c.weight / sum,
-      hasVoted: Boolean(
-        c.pendingVote &&
-          question &&
-          question.options.some((o) => o.id === c.pendingVote!.optionId),
-      ),
+      hasVoted: Boolean(this.voteForQuestion(c.pendingVote, question)),
       power: c.power,
       team: c.team,
     }));

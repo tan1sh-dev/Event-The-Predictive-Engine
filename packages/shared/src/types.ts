@@ -114,6 +114,7 @@ export interface PhaseStep {
 }
 
 export interface PendingVote {
+  questionId: string;
   optionId: OptionId;
   wager: Wager | null;
   submittedAt: number;
