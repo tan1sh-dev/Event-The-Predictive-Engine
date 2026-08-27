@@ -632,6 +632,27 @@
       background: #000;
     }
     #clue-media audio { width: min(480px, 70vw); }
+    #clue-sound-gate {
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+      padding: 28px 36px;
+      border: 0;
+      border-radius: 28px;
+      background: rgba(4, 10, 18, 0.42);
+      color: #f4fbff;
+      font-family: "GFS Didot", Didot, serif;
+      font-size: clamp(18px, 2.2vw, 28px);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+    #clue-sound-gate[hidden] { display: none; }
     @media (max-width: 720px) {
       #clue-round { top: 16px; left: 16px; }
       #clue-word { top: 52px; left: 16px; }

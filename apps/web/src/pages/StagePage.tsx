@@ -7,6 +7,8 @@ export default function StagePage() {
     <iframe
       title="The Predictive Engine"
       src="/stage-static/index.html"
+      allow="autoplay; fullscreen; picture-in-picture"
+      allowFullScreen
       className="block h-dvh w-full border-0"
       style={{ width: "100%", height: "100dvh" }}
     />

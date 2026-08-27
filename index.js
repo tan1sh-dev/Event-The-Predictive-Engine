@@ -719,36 +719,158 @@ function isMediaFolderSrc(src) {
 
 let clueMediaToken = "";
 let lastClueMediaKey = "";
+let mediaArmed = false;
 
 function notifyClueEnded() {
   if (typeof window.__notifyClueEnded === "function") window.__notifyClueEnded();
 }
 
+function armStageMedia() {
+  if (mediaArmed) return;
+  mediaArmed = true;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try {
+    const ctx = new AC();
+    if (ctx.state === "suspended" && ctx.resume) ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.04);
+  } catch {
+    /* gesture still counts as a user activation for later play() */
+  }
+}
+
+["pointerdown", "keydown", "touchstart"].forEach((type) => {
+  window.addEventListener(type, armStageMedia, { capture: true });
+});
+
+function setMediaMuted(el, muted) {
+  el.muted = muted;
+  el.defaultMuted = muted;
+  if (muted) el.setAttribute("muted", "");
+  else el.removeAttribute("muted");
+}
+
+function clueSoundGate() {
+  return document.getElementById("clue-sound-gate");
+}
+
+function showClueGate(label) {
+  const holder = document.getElementById("clue-media");
+  if (!holder) return;
+  let gate = clueSoundGate();
+  if (!gate) {
+    gate = document.createElement("button");
+    gate.id = "clue-sound-gate";
+    gate.type = "button";
+    holder.appendChild(gate);
+  }
+  gate.textContent = label;
+  gate.hidden = false;
+}
+
+function hideClueGate() {
+  const gate = clueSoundGate();
+  if (gate) gate.hidden = true;
+}
+
+function enableSound(el) {
+  armStageMedia();
+  setMediaMuted(el, false);
+  el.volume = 1;
+  const play = el.play();
+  if (play && typeof play.then === "function") {
+    play
+      .then(() => {
+        if (!el.paused && !el.muted) hideClueGate();
+        else if (el.paused) {
+          setMediaMuted(el, true);
+          el.play()?.catch(() => {});
+          showClueGate("Click for sound");
+        }
+      })
+      .catch(() => {
+        setMediaMuted(el, true);
+        el.play()?.catch(() => {});
+        showClueGate("Click for sound");
+      });
+    return;
+  }
+  if (!el.muted && !el.paused) hideClueGate();
+}
+
+function bindClueHolderClicks(holder) {
+  if (!holder || holder.dataset.soundBound === "1") return;
+  holder.dataset.soundBound = "1";
+  holder.addEventListener("click", () => {
+    const media = holder.querySelector("video, audio");
+    if (media) enableSound(media);
+  });
+}
+
 function bindCluePlayback(el) {
+  el.playsInline = true;
+  el.setAttribute("playsinline", "");
+  el.setAttribute("webkit-playsinline", "");
+  el.autoplay = true;
+  el.preload = "auto";
+  el.volume = 1;
+  setMediaMuted(el, true);
   el.addEventListener("ended", notifyClueEnded);
   el.addEventListener("error", () => {
     el.parentElement && (el.parentElement.innerHTML = "");
   });
-  const play = el.play();
-  if (play && typeof play.catch === "function") play.catch(() => {});
+
+  const start = () => {
+    if (el.dataset.clueStarted === "1") return;
+    el.dataset.clueStarted = "1";
+    const play = el.play();
+    const afterPlay = () => {
+      if (el.paused) {
+        showClueGate("Click to play");
+        return;
+      }
+      if (mediaArmed || navigator.userActivation?.hasBeenActive) {
+        enableSound(el);
+        return;
+      }
+      showClueGate("Click for sound");
+    };
+    if (play && typeof play.then === "function") {
+      play.then(afterPlay).catch(() => {
+        showClueGate("Click to play");
+      });
+    } else {
+      afterPlay();
+    }
+  };
+
+  if (el.readyState >= 2) start();
+  else el.addEventListener("canplay", start, { once: true });
 }
 
 function renderClueMedia(media) {
   const holder = document.getElementById("clue-media");
   if (!holder) return;
+  bindClueHolderClicks(holder);
   const key = `${clueMediaToken}|${media?.type ?? ""}|${media?.src ?? ""}`;
-  if (key === lastClueMediaKey && holder.childElementCount > 0) return;
+  if (key === lastClueMediaKey && holder.querySelector("video, audio, img")) return;
   lastClueMediaKey = key;
   holder.innerHTML = "";
   if (!media?.src || !isMediaFolderSrc(media.src)) return;
   if (media.type === "audio") {
-    holder.innerHTML = `<audio controls autoplay src="${media.src}"></audio>`;
+    holder.innerHTML = `<audio muted playsinline autoplay preload="auto" src="${media.src}"></audio>`;
     const audio = holder.querySelector("audio");
     if (audio) bindCluePlayback(audio);
     return;
   }
   if (media.type === "video") {
-    holder.innerHTML = `<video controls playsinline autoplay preload="auto" src="${media.src}"></video>`;
+    holder.innerHTML = `<video muted playsinline autoplay preload="auto" src="${media.src}"></video>`;
     const video = holder.querySelector("video");
     if (video) bindCluePlayback(video);
     return;
@@ -765,6 +887,7 @@ function renderClueScreen() {
   setRoundLabel(label);
   const roundEl = document.getElementById("clue-round");
   if (roundEl) roundEl.textContent = label;
+  if (inLobby || stagePhase !== "clue") return;
   renderClueMedia(currentClue?.media);
 }
 
