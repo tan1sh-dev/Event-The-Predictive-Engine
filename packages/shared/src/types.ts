@@ -20,7 +20,9 @@ export const R0_VOTE_DURATION_MS = 30_000;
 /** Extra window if Foresight is still waiting when the main clock hits 0. */
 export const FORESIGHT_GRACE_MS = 15_000;
 /** Top-3 pick window after Round 3 weight update. */
-export const POWER_GRANT_DURATION_MS = 15_000;
+export const POWER_GRANT_DURATION_MS = 30_000;
+/** Insurance, Amplify, and Foresight only resolve on this question. */
+export const POWER_QUESTION_ID = "r4-q1";
 /**
  * Silence is scored as a max-risk miss: y = −1, α = 1.5.
  * Same AdaBoost update as locking High Risk and being wrong — not y = −2.
@@ -30,6 +32,13 @@ export const NO_VOTE_ALPHA = HIGH_WAGER;
 export type RoundId = "R0" | "R1" | "R2" | "R3" | "R4" | "R5";
 /** Host "Play round" buttons: warm-up R0, scored rounds 1–5, plus the final inference. */
 export type HostPlayRoundId = RoundId | "FINAL";
+
+export function isPowerQuestion(
+  roundId: RoundId | "FINAL" | null | undefined,
+  questionIndex: 1 | 2 | null | undefined,
+): boolean {
+  return roundId === "R4" && questionIndex === 1;
+}
 
 export function clueDurationForRound(roundId: RoundId | "FINAL" | null | undefined): number | null {
   if (roundId === "R2") return R2_CLUE_DURATION_MS;
@@ -155,6 +164,10 @@ export interface PublicClusterState {
   hasVoted: boolean;
   power: PowerState | null;
   team: TeamDetails | null;
+  /** Weight when this scored round began, before any of its questions were applied. */
+  roundWeightBefore: number | null;
+  /** Weight after every question in this scored round was applied. */
+  roundWeightAfter: number | null;
 }
 
 export interface EnsembleBar {
@@ -190,6 +203,8 @@ export interface GameSnapshot {
   clueDeadlineAt: number | null;
   /** Epoch ms when the top-3 power pick window ends. Null if no clock. */
   powerGrantDeadlineAt: number | null;
+  /** True while Foresight holders have their extra 15s after the room clock. */
+  foresightGraceActive: boolean;
   /** Epoch ms when this clue play started. Changes if the host replays the round. */
   clueStartedAt: number | null;
   /** Server clock at snapshot time — clients use this to correct skew. */
@@ -214,12 +229,16 @@ export interface ClusterView {
   snapshot: GameSnapshot;
   pendingVote: PendingVote | null;
   lastResult: QuestionResult | null;
+  /** Weight before any question in the current scored round was applied. */
+  roundWeightBefore: number | null;
+  /** Weight after every question in the current scored round was applied. */
+  roundWeightAfter: number | null;
   power: PowerState | null;
   canClaimPower: boolean;
   isTopThree: boolean;
-  /** Unused Foresight: still waiting for the rest of the room to lock. */
+  /** Unused Foresight on R4 Q1: watching the question, cannot lock in yet. */
   foresightWaiting: boolean;
-  /** Crowd split shown only to a Foresight holder after everyone else has voted. */
+  /** Crowd split shown only to a Foresight holder during the extra 15s. */
   crowdSplit: VoteSplitEntry[] | null;
 }
 

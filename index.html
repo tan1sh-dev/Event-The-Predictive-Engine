@@ -364,7 +364,11 @@
     #leaderboard-screen .num {
       font-family: "GFS Didot", Didot, serif;
       font-size: 18px;
-      width: 64px;
+      width: 120px;
+      white-space: nowrap;
+    }
+    #leaderboard-screen th.num {
+      font-size: 11px;
     }
     #leaderboard-screen .weight { text-align: right; }
     #leaderboard-screen th.weight { text-align: right; }
@@ -384,7 +388,7 @@
       left: 32px;
       bottom: 32px;
       z-index: 20;
-      width: min(292px, calc(100vw - 168px));
+      width: min(400px, calc(100vw - 168px));
       padding: 16px 18px 12px;
       border: 1px solid rgba(120, 230, 255, 0.16);
       border-radius: 18px;
@@ -432,20 +436,36 @@
       align-items: baseline;
       justify-content: flex-start;
       gap: 10px;
-      margin-bottom: 10px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid rgba(120, 230, 255, 0.12);
+      margin-bottom: 8px;
     }
-    .lb-head h2,
-    .lb-kicker {
+    .lb-head h2 {
       font-family: "GFS Didot", Didot, serif;
       font-size: 18px;
       font-weight: 400;
       letter-spacing: 0.08em;
       color: inherit;
     }
-    .lb-kicker {
-      text-transform: none;
+    .lb-cols,
+    .lb-row {
+      display: grid;
+      grid-template-columns: 40px 78px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+    }
+    .lb-cols {
+      padding-bottom: 8px;
+      margin-bottom: 2px;
+      border-bottom: 1px solid rgba(120, 230, 255, 0.12);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: rgba(180, 230, 255, 0.45);
+    }
+    .lb-cols .weight {
+      font-size: inherit;
+      letter-spacing: inherit;
+      text-align: right;
     }
     #lb-body {
       list-style: none;
@@ -453,10 +473,6 @@
       flex-direction: column;
     }
     .lb-row {
-      display: grid;
-      grid-template-columns: 36px minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 8px;
       min-height: 34px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
       animation: lbRowIn 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -484,6 +500,13 @@
       font-family: "GFS Didot", Didot, serif;
       font-size: 18px;
       letter-spacing: 0.02em;
+    }
+    .lb-num {
+      font-family: "GFS Didot", Didot, serif;
+      font-size: 16px;
+      letter-spacing: 0.02em;
+      color: inherit;
+      opacity: 0.78;
     }
     .lb-name {
       overflow: hidden;
@@ -670,7 +693,7 @@
       #leaderboard {
         left: 14px;
         bottom: 14px;
-        width: min(240px, calc(100vw - 108px));
+        width: min(340px, calc(100vw - 108px));
         padding: 12px 12px 8px;
       }
       .dock-btn { right: 14px; bottom: 14px; }
@@ -720,7 +743,12 @@
   <aside id="leaderboard" class="in-lobby" aria-label="Top 5 nodes">
     <div class="lb-head">
       <h2>Top 5</h2>
-      <span class="lb-kicker">Nodes</span>
+    </div>
+    <div class="lb-cols" aria-hidden="true">
+      <span>Rank</span>
+      <span>Team No.</span>
+      <span>Team</span>
+      <span class="weight">Weight</span>
     </div>
     <ol id="lb-body"></ol>
   </aside>
@@ -754,7 +782,7 @@
           <thead>
             <tr>
               <th class="rank">Rank</th>
-              <th class="num">No.</th>
+              <th class="num">Team No.</th>
               <th>Team</th>
               <th class="weight">Weight</th>
             </tr>

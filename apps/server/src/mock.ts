@@ -84,11 +84,13 @@ function randomVotes(): void {
     engine.submitVote(n, q.id, option.id, wager);
   };
   for (let n = 1; n <= engine.clusterCount; n++) {
-    if (engine.getCluster(n)?.power?.type === "foresight") continue;
+    if (
+      engine.getCluster(n)?.power?.type === "foresight" &&
+      !engine.snapshot().foresightGraceActive
+    ) {
+      continue;
+    }
     vote(n);
-  }
-  for (let n = 1; n <= engine.clusterCount; n++) {
-    if (engine.getCluster(n)?.power?.type === "foresight") vote(n);
   }
   pushViews();
   console.log(`Cast random votes for ${engine.clusterCount} clusters.`);

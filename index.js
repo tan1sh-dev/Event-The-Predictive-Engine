@@ -436,17 +436,38 @@ function easeOutCubic(x) {
 /** Size, glow, and link strength track the cluster's live AdaBoost weight. */
 function visualsFromWeight(weight) {
   const w = Math.max(0, Number(weight) || 0);
-  // Weight 1 = standard readable node. Higher weights grow size/glow/link strength
-  // linearly; soft caps keep late-round boosts from blowing out the topology.
+  // AdaBoost weights are multiplicative (w *= exp(alpha*y)), so the RIGHT transform is
+  // logarithmic: it's perceptually uniform (Weber-Fechner), meaning equal ratios map to
+  // equal visual steps. A node twice as heavy looks exactly one step bigger whether the
+  // field sits at weight 2 or 2,000 — which is what lets the audience compare at a glance.
+  // (An adaptive "normalize to live max" map is rejected on purpose: it would resize a
+  // node when OTHER nodes change, which is confusing and unreadable on a live projector.)
+  //
+  //   w:  0.25  0.5   1    2    5   10   50   100  500  1e3  2e3   1e4   1e5  162755
+  //   t:  0.32 0.58   1  1.58 2.58 3.46 5.67 6.66 8.97 9.97 11.0 13.29 16.61 17.31
+  const t = Math.log2(1 + w);
   return {
-    scale: THREE.MathUtils.clamp(0.58 + 0.42 * w, 0.5, 2.15),
-    emissive: THREE.MathUtils.clamp(0.55 + 1.15 * w, 0.35, 3.8),
-    haloOpacity: THREE.MathUtils.clamp(0.18 + 0.24 * w, 0.1, 0.92),
-    haloWorld: THREE.MathUtils.clamp(1.6 + 1.2 * w, 1.2, 6.2),
-    edgeOpacity: THREE.MathUtils.clamp(0.22 + 0.38 * w, 0.1, 0.95),
-    edgeBoost: THREE.MathUtils.clamp(0.55 + 0.45 * w, 0.4, 1.85),
-    packetSpeed: THREE.MathUtils.clamp(0.18 + 0.22 * w, 0.14, 0.85),
-    packetSize: THREE.MathUtils.clamp(0.85 + 0.35 * w, 0.7, 1.9),
+    // SIZE is the only cue geometry limits (a node must not overrun the hub). Rather than
+    // stretch it thinly across all six orders of magnitude — which made each doubling a
+    // barely-visible ~10% — we spend the size budget on the range games actually reach
+    // (~1..2000): a punchy +0.28 per doubling (~28% radius) that the back row can read.
+    // It hits the 3.8 clamp near weight 2000 (radius 0.55·3.8 ≈ 2.1, still clearing the
+    // hub); beyond that the glow/link cues below carry the distinction.
+    scale: THREE.MathUtils.clamp(0.72 + 0.28 * t, 0.42, 3.8),
+    // GLOW (emissive) is unconstrained and, under ACES tonemapping, blooms toward
+    // white-hot as it climbs — so heavy nodes keep separating brightly even past the
+    // size clamp, all the way through the six-figure ceiling.
+    emissive: THREE.MathUtils.clamp(0.8 + 0.6 * t, 0.4, 14),
+    haloOpacity: THREE.MathUtils.clamp(0.22 + 0.12 * t, 0.12, 0.98),
+    // Halo RADIUS is the primary tail cue: additive glow has no collision cost, so it
+    // keeps widening long after opacity pins at 1 — this is what visibly separates, e.g.,
+    // weight 10k from 100k once node size has clamped.
+    haloWorld: THREE.MathUtils.clamp(1.5 + 0.7 * t, 1.3, 16),
+    edgeOpacity: THREE.MathUtils.clamp(0.22 + 0.13 * t, 0.16, 0.98),
+    // Link brightness keeps climbing past the opacity ceiling for the same reason.
+    edgeBoost: THREE.MathUtils.clamp(0.6 + 0.3 * t, 0.45, 7),
+    packetSpeed: THREE.MathUtils.clamp(0.18 + 0.08 * t, 0.14, 2.0),
+    packetSize: THREE.MathUtils.clamp(0.85 + 0.16 * t, 0.75, 3.6),
   };
 }
 
@@ -528,6 +549,7 @@ function renderMiniLeaderboard() {
       return `
       <li class="${cls}" style="--i:${index}">
         <span class="rank">${String(index + 1).padStart(2, "0")}</span>
+        <span class="lb-num">${row.number}</span>
         <span class="lb-name">${row.name}</span>
         <span class="weight">${formatWeight(row.weight)}</span>
       </li>`;

@@ -10,10 +10,12 @@ import {
   NO_VOTE_ALPHA,
   PHASE_SEQUENCE,
   POWER_GRANT_DURATION_MS,
+  POWER_QUESTION_ID,
   clueDurationForRound,
   getQuestion,
   getRound,
   isFinalInference,
+  isPowerQuestion,
   isVotingOpen,
   roundStartIndex,
   voteDurationForRound,
@@ -55,6 +57,8 @@ interface ClusterRecord {
   frozenWeight: number | null;
   pendingVote: PendingVote | null;
   lastResult: QuestionResult | null;
+  roundWeightBefore: number | null;
+  roundWeightAfter: number | null;
   power: { type: PowerUp; used: boolean } | null;
   roundResults: QuestionResult[];
   team: TeamDetails | null;
@@ -132,6 +136,8 @@ export class GameEngine {
         frozenWeight: null,
         pendingVote: null,
         lastResult: null,
+        roundWeightBefore: null,
+        roundWeightAfter: null,
         power: null,
         roundResults: [],
         team: prev?.team ?? null,
@@ -214,7 +220,6 @@ export class GameEngine {
     for (const cluster of this.clusters.values()) {
       if (cluster.socketId === socketId) {
         cluster.socketId = null;
-        this.unlockForesightIfReady();
         return cluster.number;
       }
     }
@@ -268,6 +273,8 @@ export class GameEngine {
           frozenWeight: null,
           pendingVote: null,
           lastResult: null,
+          roundWeightBefore: null,
+          roundWeightAfter: null,
           power: null,
           roundResults: [],
           team: null,
@@ -349,11 +356,18 @@ export class GameEngine {
         message: "Voting is not open.",
       };
     }
+    if (this.foresightGraceArmed && !this.canVoteInForesightGrace(cluster)) {
+      return {
+        ok: false,
+        error: "voting_closed",
+        message: "The room clock is over. Foresight nodes have 15 extra seconds.",
+      };
+    }
     if (this.isForesightWaiting(cluster)) {
       return {
         ok: false,
         error: "foresight_wait",
-        message: "Foresight waits for the rest of the room to lock in. Then you see the split.",
+        message: "Foresight watches with the room. You lock in after the clock, with 15 extra seconds.",
       };
     }
     const question = this.getCurrentQuestion();
@@ -403,8 +417,11 @@ export class GameEngine {
       submittedAt: this.now(),
     };
     cluster.pendingVote = pendingVote;
-    this.unlockForesightIfReady();
     return { ok: true, pendingVote };
+  }
+
+  private isPowerQuestionStep(step: PhaseStep = this.step): boolean {
+    return isPowerQuestion(step.roundId, step.questionIndex ?? null);
   }
 
   private hasUnusedForesight(cluster: ClusterRecord): boolean {
@@ -412,7 +429,16 @@ export class GameEngine {
   }
 
   private isForesightWaiting(cluster: ClusterRecord): boolean {
-    return this.hasUnusedForesight(cluster) && cluster.foresightSplit == null;
+    return (
+      this.isPowerQuestionStep() &&
+      isVotingOpen(this.step.phase) &&
+      this.hasUnusedForesight(cluster) &&
+      cluster.foresightSplit == null
+    );
+  }
+
+  private canVoteInForesightGrace(cluster: ClusterRecord): boolean {
+    return cluster.power?.type === "foresight" && cluster.foresightSplit != null;
   }
 
   crowdLockedCount(): number {
@@ -470,17 +496,17 @@ export class GameEngine {
     });
   }
 
-  unlockForesightIfReady(): boolean {
-    if (!this.isCrowdLocked()) return false;
+  private openForesightGrace(): boolean {
+    const waiting = [...this.clusters.values()].filter((c) => this.isForesightWaiting(c));
+    if (waiting.length === 0) return false;
     const split = this.voteSplit(this.getCurrentQuestion(), { crowdOnly: true });
-    let changed = false;
-    for (const cluster of this.clusters.values()) {
-      if (!this.hasUnusedForesight(cluster)) continue;
+    for (const cluster of waiting) {
       cluster.power = { type: "foresight", used: true };
       cluster.foresightSplit = split;
-      changed = true;
     }
-    return changed;
+    this.foresightGraceArmed = true;
+    this.voteDeadlineAt = this.now() + FORESIGHT_GRACE_MS;
+    return true;
   }
 
   useForesight(clusterNumber: number):
@@ -511,12 +537,11 @@ export class GameEngine {
         message: "Foresight only works while voting is open.",
       };
     }
-    this.unlockForesightIfReady();
     if (!cluster.foresightSplit) {
       return {
         ok: false,
         error: "wrong_phase",
-        message: "Foresight waits for the rest of the room to lock in.",
+        message: "Foresight unlocks after the room clock. You’ll get 15 extra seconds with the crowd split.",
       };
     }
     return { ok: true, power: cluster.power, split: cluster.foresightSplit };
@@ -543,7 +568,7 @@ export class GameEngine {
       return {
         ok: false,
         error: "wrong_phase",
-        message: "The 15-second pick window has closed.",
+        message: "The 30-second pick window has closed.",
       };
     }
     const cluster = this.clusters.get(clusterNumber);
@@ -657,21 +682,39 @@ export class GameEngine {
       const toApply = cluster.roundResults.filter((r) =>
         r.questionId.startsWith(`${roundId.toLowerCase()}-`),
       );
-      let w = cluster.weight;
-      for (const result of toApply) {
-        if (this.weightsFrozen) break;
-        const applied = this.applyOneResult(cluster, result, w);
-        w = applied.weightAfter;
-        result.weightBefore = applied.weightBefore;
-        result.weightAfter = applied.weightAfter;
-        result.y = applied.y;
-        result.alpha = applied.alpha;
-        result.powerApplied = applied.powerApplied;
-        cluster.lastResult = result;
+      if (toApply.length > 0) {
+        const ordered = [...toApply].sort((a, b) =>
+          a.questionId.localeCompare(b.questionId),
+        );
+        let w = cluster.weight;
+        for (const result of ordered) {
+          if (this.weightsFrozen) break;
+          const applied = this.applyOneResult(cluster, result, w);
+          w = applied.weightAfter;
+          result.weightBefore = applied.weightBefore;
+          result.weightAfter = applied.weightAfter;
+          result.y = applied.y;
+          result.alpha = applied.alpha;
+          result.powerApplied = applied.powerApplied;
+          cluster.lastResult = result;
+        }
+        cluster.weight = w;
+        const first = ordered[0];
+        const last = ordered[ordered.length - 1];
+        cluster.roundWeightBefore = first?.weightBefore ?? cluster.weight;
+        cluster.roundWeightAfter = last?.weightAfter ?? w;
+      } else {
+        const fromThisRound = (cluster.lastResult?.questionId ?? "").startsWith(
+          `${roundId.toLowerCase()}-`,
+        );
+        if (!fromThisRound) {
+          cluster.roundWeightBefore = cluster.weight;
+          cluster.roundWeightAfter = cluster.weight;
+        }
       }
-      cluster.weight = w;
       cluster.roundResults = [];
       cluster.pendingVote = null;
+      if (roundId === "R4") this.consumeLeftoverWeightPowers(cluster);
     }
 
     const discarded = round.calibration;
@@ -698,7 +741,9 @@ export class GameEngine {
     let alpha = abstained ? NO_VOTE_ALPHA : (result.wager ?? 0.5);
     let powerApplied: PowerUp | null = null;
 
+    const onPowerQuestion = result.questionId === POWER_QUESTION_ID;
     if (
+      onPowerQuestion &&
       !abstained &&
       !result.correct &&
       cluster.power?.type === "insurance" &&
@@ -708,6 +753,7 @@ export class GameEngine {
       powerApplied = "insurance";
       cluster.power.used = true;
     } else if (
+      onPowerQuestion &&
       !abstained &&
       result.correct &&
       cluster.power?.type === "amplify" &&
@@ -727,6 +773,20 @@ export class GameEngine {
       weightAfter,
       powerApplied,
     };
+  }
+
+  private expireUnusedForesight(): void {
+    for (const cluster of this.clusters.values()) {
+      if (!this.hasUnusedForesight(cluster)) continue;
+      cluster.power = { type: "foresight", used: true };
+    }
+  }
+
+  private consumeLeftoverWeightPowers(cluster: ClusterRecord): void {
+    if (!cluster.power || cluster.power.used) return;
+    if (cluster.power.type === "insurance" || cluster.power.type === "amplify") {
+      cluster.power.used = true;
+    }
   }
 
   freezeWeights(): void {
@@ -813,18 +873,8 @@ export class GameEngine {
     if (!this.scoredVoteOpen()) return false;
     if (this.voteDeadlineAt != null && this.now() < this.voteDeadlineAt) return false;
 
-    if (!this.foresightGraceArmed) {
-      const waiting = [...this.clusters.values()].filter((c) => this.isForesightWaiting(c));
-      if (waiting.length > 0) {
-        const split = this.voteSplit(this.getCurrentQuestion(), { crowdOnly: true });
-        for (const cluster of waiting) {
-          cluster.power = { type: "foresight", used: true };
-          cluster.foresightSplit = split;
-        }
-        this.foresightGraceArmed = true;
-        this.voteDeadlineAt = this.now() + FORESIGHT_GRACE_MS;
-        return true;
-      }
+    if (!this.foresightGraceArmed && this.openForesightGrace()) {
+      return true;
     }
 
     this.advance();
@@ -967,6 +1017,9 @@ export class GameEngine {
   }
 
   private onLeaveStep(step: PhaseStep): void {
+    if (step.phase === "voting_open" && this.isPowerQuestionStep(step)) {
+      this.expireUnusedForesight();
+    }
     if (step.phase === "weight_update" && step.roundId && step.roundId !== "FINAL") {
       // ensure applied if host skipped the animation wait
       const anyUnapplied = [...this.clusters.values()].some((c) =>
@@ -1037,6 +1090,8 @@ export class GameEngine {
       hasVoted: Boolean(this.voteForQuestion(c.pendingVote, question)),
       power: c.power,
       team: c.team,
+      roundWeightBefore: c.roundWeightBefore,
+      roundWeightAfter: c.roundWeightAfter,
     }));
   }
 
@@ -1087,6 +1142,7 @@ export class GameEngine {
       voteDeadlineAt: this.scoredVoteOpen() ? this.voteDeadlineAt : null,
       clueDeadlineAt: step.phase === "clue" ? this.clueDeadlineAt : null,
       powerGrantDeadlineAt: step.phase === "power_grant" ? this.powerGrantDeadlineAt : null,
+      foresightGraceActive: this.foresightGraceArmed && this.scoredVoteOpen(),
       clueStartedAt: this.showingClueMedia(step) ? this.clueStartedAt : null,
       serverTime: this.now(),
     };
@@ -1102,6 +1158,8 @@ export class GameEngine {
       snapshot: snapshot ?? this.snapshot(),
       pendingVote: cluster.pendingVote,
       lastResult: cluster.lastResult,
+      roundWeightBefore: cluster.roundWeightBefore,
+      roundWeightAfter: cluster.roundWeightAfter,
       power: cluster.power,
       canClaimPower:
         this.step.phase === "power_grant" &&
@@ -1109,7 +1167,7 @@ export class GameEngine {
         cluster.power === null,
       isTopThree: top.includes(clusterNumber),
       foresightWaiting: this.isForesightWaiting(cluster),
-      crowdSplit: cluster.foresightSplit,
+      crowdSplit: this.foresightGraceArmed ? cluster.foresightSplit : null,
     };
   }
 
@@ -1174,6 +1232,8 @@ export class GameEngine {
         live.frozenWeight = c.frozenWeight;
         live.pendingVote = c.pendingVote;
         live.lastResult = c.lastResult;
+        live.roundWeightBefore = c.roundWeightBefore ?? null;
+        live.roundWeightAfter = c.roundWeightAfter ?? null;
         live.power = c.power;
         live.roundResults = c.roundResults ?? [];
         live.team = c.team ?? null;

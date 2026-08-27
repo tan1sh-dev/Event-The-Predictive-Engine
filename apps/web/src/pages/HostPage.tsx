@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  FORESIGHT_GRACE_MS,
   HOST_PLAY_ROUNDS,
   MAX_CLUSTER_COUNT,
   MIN_CLUSTER_COUNT,
@@ -230,9 +231,11 @@ export default function HostPage() {
             {snap.connectedCount}/{snap.clusterCount} phones
           </p>
           <p>
-            {snap.foresightWaitingCount > 0
-              ? `${snap.crowdLockedCount} crowd locked · ${snap.foresightWaitingCount} foresight waiting`
-              : `${snap.lockedCount} locked`}
+            {snap.foresightGraceActive
+              ? `Foresight extra 15s · ${snap.lockedCount} locked`
+              : snap.foresightWaitingCount > 0
+                ? `${snap.crowdLockedCount} crowd locked · ${snap.foresightWaitingCount} foresight watching`
+                : `${snap.lockedCount} locked`}
             {snap.weightsFrozen ? " · FROZEN" : ""}
           </p>
           {clueRemainingMs != null && clueDurationForRound(snap.roundId) != null && (
@@ -249,9 +252,11 @@ export default function HostPage() {
             <div className="mt-2 flex justify-end">
               <VoteTimer
                 remainingMs={remainingMs}
-                totalMs={voteDurationForRound(snap.roundId)}
+                totalMs={
+                  snap.foresightGraceActive ? FORESIGHT_GRACE_MS : voteDurationForRound(snap.roundId)
+                }
                 compact
-                kicker="Question"
+                kicker={snap.foresightGraceActive ? "Foresight" : "Question"}
               />
             </div>
           )}
@@ -319,9 +324,11 @@ export default function HostPage() {
               }
             />
             <HostClockCard
-              label="Question"
+              label={snap.foresightGraceActive ? "Foresight extra" : "Question"}
               remainingMs={remainingMs}
-              totalMs={voteDurationForRound(snap.roundId)}
+              totalMs={
+                snap.foresightGraceActive ? FORESIGHT_GRACE_MS : voteDurationForRound(snap.roundId)
+              }
               fallback={
                 snap.phase === "clue"
                   ? `Starts after clue · ${Math.round(voteDurationForRound(snap.roundId) / 1000)}s`
@@ -429,10 +436,10 @@ export default function HostPage() {
 
       {snap.phase === "power_grant" && (
         <section className="mt-6 rounded-3xl bg-white/6 p-5 ring-1 ring-white/10">
-          <h2 className="font-display text-2xl">Top 3 are picking (15s)</h2>
+          <h2 className="font-display text-2xl">Top 3 are picking (30s)</h2>
           <p className="mt-2 text-sm text-cream/60">
-            After Round 3 weights, only the heaviest three nodes see the boosts. Everyone else
-            stays on the weight screen. The window closes automatically.
+            After Round 3 weights, only the heaviest three nodes pick a boost for Round 4
+            question 1. Everyone else stays on the weight screen. The window closes automatically.
           </p>
           <div className="mt-3 flex flex-col gap-3">
             {snap.topClusterNumbers.map((n) => {

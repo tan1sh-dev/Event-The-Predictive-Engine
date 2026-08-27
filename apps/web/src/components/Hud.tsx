@@ -1,53 +1,30 @@
 import type { ClusterView } from "@engine/shared";
 
+type Tone = "wait" | "live" | "open" | "locked" | "gold" | "cyan" | "danger";
+
 function lockStatus(
   phase: string,
   hasVoted: boolean,
   canClaimPower: boolean,
-): {
-  label: string;
-  className: string;
-} {
+  foresightWaiting: boolean,
+  foresightGrace: boolean,
+): { label: string; tone: Tone } {
   const voting =
     phase === "voting_open" ||
     phase === "voting_locked" ||
     phase === "final_inference_open" ||
     phase === "final_inference_locked";
 
-  if (phase === "clue") {
-    return {
-      label: "Look up",
-      className: "bg-cyan/15 text-cyan ring-1 ring-cyan/30",
-    };
-  }
-  if (phase === "power_grant" && canClaimPower) {
-    return {
-      label: "Pick",
-      className: "bg-gold/15 text-gold ring-1 ring-gold/30",
-    };
-  }
-  if (!voting) {
-    return {
-      label: "Wait",
-      className: "bg-white/8 text-cream/70 ring-1 ring-white/10",
-    };
-  }
-  if (hasVoted) {
-    return {
-      label: "Locked",
-      className: "bg-mint/15 text-mint ring-1 ring-mint/30",
-    };
-  }
+  if (phase === "clue") return { label: "Look up", tone: "cyan" };
+  if (phase === "power_grant" && canClaimPower) return { label: "Pick", tone: "gold" };
+  if (!voting) return { label: "Wait", tone: "wait" };
+  if (hasVoted) return { label: "Locked", tone: "locked" };
+  if (foresightWaiting) return { label: "Hold", tone: "gold" };
+  if (foresightGrace) return { label: "Extra", tone: "gold" };
   if (phase === "voting_locked" || phase === "final_inference_locked") {
-    return {
-      label: "Missed",
-      className: "bg-magenta/15 text-magenta ring-1 ring-magenta/30",
-    };
+    return { label: "Missed", tone: "danger" };
   }
-  return {
-    label: "Open",
-    className: "bg-gold/15 text-gold ring-1 ring-gold/30",
-  };
+  return { label: "Open", tone: "open" };
 }
 
 export default function Hud({
@@ -59,7 +36,13 @@ export default function Hud({
 }) {
   const { snapshot } = view;
   const me = snapshot.clusters.find((c) => c.number === view.clusterNumber);
-  const lock = lockStatus(snapshot.phase, Boolean(me?.hasVoted), view.canClaimPower);
+  const lock = lockStatus(
+    snapshot.phase,
+    Boolean(me?.hasVoted),
+    view.canClaimPower,
+    view.foresightWaiting,
+    Boolean(snapshot.foresightGraceActive && view.power?.type === "foresight"),
+  );
   const q =
     snapshot.questionIndex != null
       ? ` · Q${snapshot.questionIndex}`
@@ -68,40 +51,33 @@ export default function Hud({
         : "";
 
   return (
-    <header className="flex items-center justify-between gap-2 px-1 pt-[max(0.5rem,env(safe-area-inset-top))]">
-      <div className="flex items-center gap-2">
-        <span className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-cyan-300 to-violet-400 text-sm font-extrabold text-[#071018] shadow-[0_0_18px_rgba(92,239,255,0.45)]">
-          {view.clusterNumber}
+    <header className="play-hud">
+      <div className="play-hud-identity">
+        <span className="play-hud-node" aria-hidden>
+          <span className="play-hud-node-glow" />
+          <svg className="play-hud-node-ring" viewBox="0 0 44 44">
+            <circle cx="22" cy="22" r="20" fill="none" stroke="rgba(92,239,255,0.4)" strokeWidth="1" strokeDasharray="2.5 4.5" />
+          </svg>
+          <span className="play-hud-node-core">{view.clusterNumber}</span>
         </span>
-        <div className="min-w-0 leading-tight">
-          <p className="truncate text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-200/80">
-            {me?.team?.teamName ?? `Cluster ${view.clusterNumber}`}
-          </p>
-          <p className="text-sm font-semibold">
-            {snapshot.roundId ?? "Engine"}
-            {q}
+        <div className="play-hud-meta">
+          <p className="play-hud-team">{me?.team?.teamName ?? `Cluster ${view.clusterNumber}`}</p>
+          <p className="play-hud-round">
+            <span className="play-hud-round-id">
+              {snapshot.roundId ?? "Engine"}
+              {q}
+            </span>
+            <span className="play-hud-rule" aria-hidden />
+            <span className="play-hud-weight">w {(me?.weight ?? 1).toFixed(2)}</span>
           </p>
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <span
-          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${
-            connected ? "bg-mint/15 text-mint" : "bg-magenta/20 text-magenta"
-          }`}
-        >
-          <span className={`h-1.5 w-1.5 rounded-full ${connected ? "orig-live-dot bg-mint" : "bg-magenta"}`} />
+      <div className="play-hud-flags">
+        <span className={`play-hud-flag is-${connected ? "live" : "danger"}`}>
+          <span className="play-hud-flag-dot" />
           {connected ? "Live" : "Offline"}
         </span>
-        <span
-          className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${lock.className} ${
-            lock.label === "Open" ? "orig-open-pulse" : ""
-          }`}
-        >
-          {lock.label}
-        </span>
-        <span className="rounded-full bg-gold/15 px-2.5 py-1 text-[11px] font-extrabold text-gold">
-          w {(me?.weight ?? 1).toFixed(2)}
-        </span>
+        <span className={`play-hud-flag is-${lock.tone}`}>{lock.label}</span>
       </div>
     </header>
   );

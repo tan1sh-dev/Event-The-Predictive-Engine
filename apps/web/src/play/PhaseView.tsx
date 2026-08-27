@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import {
+  FORESIGHT_GRACE_MS,
   MID_WAGER,
   POWER_GRANT_DURATION_MS,
   clueDurationForRound,
+  isPowerQuestion,
   normalizeWager,
   voteDurationForRound,
   type ClusterView,
@@ -37,19 +39,19 @@ const POWERS: { id: PowerUp; title: string; body: string; variant: "mint" | "gol
     {
       id: "insurance",
       title: "Insurance",
-      body: "Next miss costs zero weight. You still vote with everyone else.",
+      body: "On Round 4 Q1, a miss costs zero weight. You still vote with everyone else.",
       variant: "mint",
     },
     {
       id: "amplify",
       title: "Amplify",
-      body: "Next hit doubles α. You still vote with everyone else.",
+      body: "On Round 4 Q1, a hit doubles α. You still vote with everyone else.",
       variant: "danger",
     },
     {
       id: "foresight",
       title: "Foresight",
-      body: "Wait for the crowd to lock, see their %, then vote last.",
+      body: "See Round 4 Q1 with the room. After the clock hits zero, you get 15s with the crowd split.",
       variant: "gold",
     },
   ];
@@ -115,6 +117,7 @@ function VoteForm({
   pendingWager,
   split,
   expired,
+  canLock = true,
   onVote,
 }: {
   question: Question;
@@ -123,6 +126,7 @@ function VoteForm({
   pendingWager: Wager | null;
   split: VoteSplitEntry[] | null;
   expired: boolean;
+  canLock?: boolean;
   onVote: (optionId: string, wager: Wager | null, onAck?: (ok: boolean) => void) => void;
 }) {
   const [option, setOption] = useState<string | null>(pendingOption);
@@ -146,7 +150,7 @@ function VoteForm({
   const frozen = lockedIn || expired;
 
   const lockIn = () => {
-    if (frozen) return;
+    if (frozen || !canLock) return;
     if (!option) return;
     if (wagerRequired && wager == null) return;
     setLockedIn(true);
@@ -207,22 +211,24 @@ function VoteForm({
         </div>
       )}
 
-      <Pressable
-        variant="go"
-        className={`w-full ${lockedIn ? "disabled:!opacity-100" : ""}`}
-        disabled={!ready || frozen}
-        onClick={lockIn}
-      >
-        {lockedIn ? "Locked in" : "Lock in"}
-      </Pressable>
-      {!ready && (
+      {canLock && (
+        <Pressable
+          variant="go"
+          className={`w-full ${lockedIn ? "disabled:!opacity-100" : ""}`}
+          disabled={!ready || frozen}
+          onClick={lockIn}
+        >
+          {lockedIn ? "Locked in" : "Lock in"}
+        </Pressable>
+      )}
+      {canLock && !ready && (
         <p className="text-center text-[11px] text-cream/40">
           {wagerRequired
             ? "Pick an option, set α from 0.5 to 1.5, then lock in."
             : "Pick an option, then lock in."}
         </p>
       )}
-      {lockedIn && (
+      {canLock && lockedIn && (
         <div className="animate-stamp mx-auto rounded-full border-2 border-mint px-4 py-1 text-[11px] font-extrabold tracking-[0.2em] text-mint uppercase">
           Signal sent
         </div>
@@ -235,25 +241,31 @@ function VoteForm({
 function WeightUpdateScreen({
   snapshot,
   me,
-  lastResult,
+  roundWeightBefore,
+  roundWeightAfter,
 }: {
   snapshot: ClusterView["snapshot"];
   me: PublicClusterState | undefined;
-  lastResult: QuestionResult | null;
+  roundWeightBefore: number | null;
+  roundWeightAfter: number | null;
 }) {
+  const before = me?.roundWeightBefore ?? roundWeightBefore;
+  const after = me?.roundWeightAfter ?? roundWeightAfter;
+  const showRoundDelta =
+    snapshot.roundId !== "R0" && before != null && after != null;
   return (
-    <div className="mt-10 flex flex-col items-center gap-2">
-      <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-200/80">
+    <div className="weight-update">
+      <p className="weight-update-kicker">
         {snapshot.roundId === "R0" ? "Calibration · discarded" : "AdaBoost update"}
       </p>
-      <WeightOrb visual={me?.visualWeight ?? 0.5} weight={me?.weight ?? 1} pulse />
-      {lastResult && snapshot.roundId !== "R0" && (
-        <p className="text-sm text-cream/60">
-          {lastResult.weightBefore.toFixed(2)} → {lastResult.weightAfter.toFixed(2)}
-        </p>
-      )}
+      <WeightOrb
+        visual={me?.visualWeight ?? 0.5}
+        weight={showRoundDelta ? after : (me?.weight ?? 1)}
+        fromWeight={showRoundDelta ? before : null}
+        pulse
+      />
       {snapshot.roundId === "R0" && (
-        <p className="max-w-xs text-center text-sm text-cream/60">
+        <p className="weight-update-note">
           Practice round. Every node snaps back to 1. The real learning starts next.
         </p>
       )}
@@ -322,44 +334,51 @@ export default function PhaseView({
     question
   ) {
     const expired = remainingMs === 0;
-    if (view.foresightWaiting) {
-      return (
-        <div className="mt-5">
-          {remainingMs != null && (
-            <VoteTimer remainingMs={remainingMs} totalMs={voteDurationForRound(snapshot.roundId)} />
-          )}
-          <WaitCard
-            kicker="Foresight"
-            title="Hold. The crowd is voting."
-            body={`${snapshot.crowdLockedCount} of the other nodes have locked in. When they all have, you’ll see their percentages — then you vote last.`}
-          />
-        </div>
-      );
-    }
+    const grace = snapshot.foresightGraceActive;
+    const waiting = view.foresightWaiting;
+    const powerQuestion = isPowerQuestion(snapshot.roundId, snapshot.questionIndex);
     const armed =
       view.power &&
       !view.power.used &&
+      powerQuestion &&
       (view.power.type === "insurance" || view.power.type === "amplify")
         ? view.power.type
         : null;
+    const voteTotalMs = grace ? FORESIGHT_GRACE_MS : voteDurationForRound(snapshot.roundId);
     return (
       <div className="mt-5">
         {remainingMs != null && (
-          <VoteTimer remainingMs={remainingMs} totalMs={voteDurationForRound(snapshot.roundId)} />
+          <VoteTimer
+            remainingMs={remainingMs}
+            totalMs={voteTotalMs}
+            kicker={
+              waiting ? "Room clock" : grace && view.power?.type === "foresight" ? "Your extra 15s" : undefined
+            }
+          />
         )}
-        <p className="mb-3 text-center text-[11px] font-bold uppercase tracking-[0.28em] text-cream/45">
-          {snapshot.lockedCount} / {snapshot.clusterCount} locked in
-        </p>
+        {!waiting && (
+          <p className="mb-3 text-center text-[11px] font-bold uppercase tracking-[0.28em] text-cream/45">
+            {snapshot.lockedCount} / {snapshot.clusterCount} locked in
+          </p>
+        )}
+        {waiting && (
+          <p className="mb-3 rounded-2xl bg-gold/12 px-4 py-2 text-center text-sm text-gold ring-1 ring-gold/30">
+            Foresight is on. You see the question now. Lock-in and the crowd split open only after
+            the room clock hits zero.
+          </p>
+        )}
         {armed && (
           <p className="mb-3 rounded-2xl bg-white/6 px-4 py-2 text-center text-sm text-cream/70 ring-1 ring-white/10">
             {armed === "insurance"
-              ? "Insurance is armed — a miss won’t cut your weight."
-              : "Amplify is armed — a hit doubles α."}
+              ? "Insurance is armed — a miss on this question won’t cut your weight."
+              : "Amplify is armed — a hit on this question doubles α."}
           </p>
         )}
         <VoteForm
           question={question}
-          wagerRequired={snapshot.phase === "voting_open" && question.wagerRequired}
+          wagerRequired={
+            !waiting && snapshot.phase === "voting_open" && question.wagerRequired
+          }
           pendingOption={
             view.pendingVote &&
             (!view.pendingVote.questionId || view.pendingVote.questionId === question.id)
@@ -372,8 +391,9 @@ export default function PhaseView({
               ? view.pendingVote.wager
               : null
           }
-          split={view.crowdSplit}
+          split={grace ? view.crowdSplit : null}
           expired={expired}
+          canLock={!waiting}
           onVote={onVote}
         />
       </div>
@@ -489,7 +509,14 @@ export default function PhaseView({
   }
 
   if (snapshot.phase === "weight_update") {
-    return <WeightUpdateScreen snapshot={snapshot} me={me} lastResult={view.lastResult} />;
+    return (
+      <WeightUpdateScreen
+        snapshot={snapshot}
+        me={me}
+        roundWeightBefore={view.roundWeightBefore}
+        roundWeightAfter={view.roundWeightAfter}
+      />
+    );
   }
 
   if (snapshot.phase === "mic_moment") {
@@ -516,8 +543,9 @@ export default function PhaseView({
           )}
           <h2 className="font-display text-center text-3xl font-bold">You made it to top 3.</h2>
           <p className="mb-2 text-center text-sm text-cream/65">
-            Pick one boost. Insurance and Amplify change your weight. Foresight lets you vote last
-            after you see the crowd.
+            Pick one boost for Round 4 question 1. Insurance and Amplify change your weight.
+            Foresight lets you see the question with everyone, then vote after the clock with the
+            crowd split.
           </p>
           {POWERS.map((p) => (
             <Pressable
@@ -541,13 +569,20 @@ export default function PhaseView({
           title={`${view.power.type} is yours.`}
           body={
             view.power.type === "foresight"
-              ? "Next vote, you wait for the crowd, see their %, then lock in last."
-              : "You’ll vote with everyone else. This only changes how your weight moves."
+              ? "On Round 4 Q1 you’ll see the question with everyone, then get 15 extra seconds with the crowd’s vote split after the clock hits zero."
+              : "You’ll vote with everyone else on Round 4 Q1. This only changes how your weight moves."
           }
         />
       );
     }
-    return <WeightUpdateScreen snapshot={snapshot} me={me} lastResult={view.lastResult} />;
+    return (
+      <WeightUpdateScreen
+        snapshot={snapshot}
+        me={me}
+        roundWeightBefore={view.roundWeightBefore}
+        roundWeightAfter={view.roundWeightAfter}
+      />
+    );
   }
 
   if (snapshot.phase === "active_query") {

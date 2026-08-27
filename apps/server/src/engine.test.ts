@@ -247,6 +247,43 @@ describe("voting + AdaBoost round", () => {
     assert.ok(Math.abs(low - Math.exp(0.5)) < 1e-9, `low=${low}`);
     assert.ok(Math.abs(high - Math.exp(1.5)) < 1e-9, `high=${high}`);
     assert.ok(high > low);
+    const view = engine.clusterView(1)!;
+    assert.ok(Math.abs((view.roundWeightBefore ?? 0) - 1) < 1e-9);
+    assert.ok(Math.abs((view.roundWeightAfter ?? 0) - low) < 1e-9);
+  });
+
+  it("orb delta is the full round, not the last question", () => {
+    const engine = new GameEngine({ clusterCount: 4 });
+    engine.joinCluster(1, undefined, "s1");
+    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R3" && s.questionIndex === 1);
+    engine.setWeight(1, 2);
+    playQuestion(engine, [{ cluster: 1, option: "a", wager: 0.5 }], "a");
+    playQuestion(engine, [{ cluster: 1, option: "a", wager: 1 }], "b");
+    goTo(engine, (s) => s.phase === "weight_update" && s.roundId === "R3");
+
+    const expectedAfter = 2 * Math.exp(0.5) * Math.exp(-1);
+    const lastQuestionBefore = 2 * Math.exp(0.5);
+    const cluster = engine.getCluster(1)!;
+    assert.ok(Math.abs(cluster.weight - expectedAfter) < 1e-9);
+    assert.ok(Math.abs((cluster.roundWeightBefore ?? 0) - 2) < 1e-9);
+    assert.ok(Math.abs((cluster.roundWeightAfter ?? 0) - expectedAfter) < 1e-9);
+    assert.ok(Math.abs((cluster.lastResult?.weightBefore ?? 0) - lastQuestionBefore) < 1e-9);
+    assert.ok(Math.abs((cluster.lastResult?.weightAfter ?? 0) - expectedAfter) < 1e-9);
+
+    const view = engine.clusterView(1)!;
+    const publicMe = engine.snapshot().clusters.find((c) => c.number === 1)!;
+    assert.ok(Math.abs((view.roundWeightBefore ?? 0) - 2) < 1e-9);
+    assert.ok(Math.abs((view.roundWeightAfter ?? 0) - expectedAfter) < 1e-9);
+    assert.ok(Math.abs((publicMe.roundWeightBefore ?? 0) - 2) < 1e-9);
+    assert.ok(Math.abs((publicMe.roundWeightAfter ?? 0) - expectedAfter) < 1e-9);
+    assert.ok(
+      Math.abs((publicMe.roundWeightBefore ?? 0) - lastQuestionBefore) > 0.01,
+      "round delta must not be the last question only",
+    );
+
+    engine.applyRoundWeights();
+    assert.ok(Math.abs((engine.getCluster(1)!.roundWeightBefore ?? 0) - 2) < 1e-9);
+    assert.ok(Math.abs((engine.getCluster(1)!.roundWeightAfter ?? 0) - expectedAfter) < 1e-9);
   });
 
   it("rejects votes while voting is closed and requires a wager on scored questions", () => {
@@ -348,19 +385,24 @@ describe("voting + AdaBoost round", () => {
     engine.joinCluster(2, undefined, "s2");
     engine.joinCluster(3, undefined, "s3");
     engine.grantPowers([{ clusterNumber: 1, power: "foresight" }]);
-    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R1");
+    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R4" && s.questionIndex === 1);
     const q = engine.getCurrentQuestion()!;
     engine.submitVote(2, q.id, "b", 0.5);
 
     now += 90_000;
     assert.equal(engine.expireOpenVote(), true);
     assert.equal(engine.step.phase, "voting_open");
+    assert.equal(engine.snapshot().foresightGraceActive, true);
     assert.equal(engine.clusterView(1)?.foresightWaiting, false);
     assert.ok(engine.clusterView(1)?.crowdSplit);
     assert.equal(engine.msUntilVoteDeadline(), 15_000);
 
-    const lateCrowd = engine.submitVote(1, q.id, "a", 0.5);
-    assert.equal(lateCrowd.ok, true);
+    const lateCrowd = engine.submitVote(3, q.id, "a", 0.5);
+    assert.equal(lateCrowd.ok, false);
+    if (!lateCrowd.ok) assert.equal(lateCrowd.error, "voting_closed");
+
+    const lateForesight = engine.submitVote(1, q.id, "a", 0.5);
+    assert.equal(lateForesight.ok, true);
 
     now += 15_000;
     assert.equal(engine.expireOpenVote(), true);
@@ -523,7 +565,7 @@ describe("power-ups", () => {
     if (!denied.ok) assert.equal(denied.error, "not_top_three");
   });
 
-  it("gives the top 3 a 15-second pick window after R3, then advances", () => {
+  it("gives the top 3 a 30-second pick window after R3, then advances", () => {
     let now = 5_000_000;
     const engine = new GameEngine({ clusterCount: 4, now: () => now });
     engine.joinCluster(1, undefined, "s1");
@@ -536,12 +578,12 @@ describe("power-ups", () => {
     engine.setWeight(4, 1);
     goTo(engine, (s) => s.phase === "power_grant");
     const snap = engine.snapshot();
-    assert.equal(snap.powerGrantDeadlineAt, now + 15_000);
-    assert.equal(engine.clock().powerGrantRemainingMs, 15_000);
+    assert.equal(snap.powerGrantDeadlineAt, now + 30_000);
+    assert.equal(engine.clock().powerGrantRemainingMs, 30_000);
     assert.equal(engine.clusterView(1)?.canClaimPower, true);
     assert.equal(engine.clusterView(4)?.canClaimPower, false);
 
-    now += 14_999;
+    now += 29_999;
     assert.equal(engine.expirePowerGrant(), false);
     now += 1;
     assert.equal(engine.claimPower(2, "amplify").ok, false);
@@ -551,9 +593,9 @@ describe("power-ups", () => {
     assert.equal(engine.snapshot().powerGrantDeadlineAt, null);
   });
 
-  it("Insurance zeroes the next wrong update; Amplify doubles alpha on the next correct", () => {
+  it("Insurance zeroes a miss and Amplify doubles alpha only on Round 4 question 1", () => {
     const engine = new GameEngine({ clusterCount: 20 });
-    goTo(engine, (s) => s.phase === "clue" && s.roundId === "R1");
+    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R4" && s.questionIndex === 1);
     engine.setWeight(1, 2);
     engine.setWeight(2, 2);
     engine.grantPowers([
@@ -568,7 +610,7 @@ describe("power-ups", () => {
       ],
       "b",
     );
-    goTo(engine, (s) => s.phase === "weight_update" && s.roundId === "R1");
+    goTo(engine, (s) => s.phase === "weight_update" && s.roundId === "R4");
     // cluster 1: wrong with insurance → no change
     assert.ok(Math.abs(engine.getCluster(1)!.weight - 2) < 1e-9);
     // cluster 2: correct with amplify α=1.0 → 2 * exp(1)
@@ -577,23 +619,68 @@ describe("power-ups", () => {
     assert.equal(engine.getCluster(2)!.power?.used, true);
   });
 
-  it("Foresight waits for the crowd, then shows percentages and lets that node vote last", () => {
-    const engine = new GameEngine({ clusterCount: 6 });
+  it("does not let Insurance or Amplify apply on Round 4 question 2", () => {
+    const engine = new GameEngine({ clusterCount: 4 });
+    engine.joinCluster(1, undefined, "s1");
+    engine.joinCluster(2, undefined, "s2");
+    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R4" && s.questionIndex === 1);
+    engine.setWeight(1, 2);
+    engine.setWeight(2, 2);
+    engine.grantPowers([
+      { clusterNumber: 1, power: "insurance" },
+      { clusterNumber: 2, power: "amplify" },
+    ]);
+    playQuestion(
+      engine,
+      [
+        { cluster: 1, option: "b", wager: 1 },
+        { cluster: 2, option: "a", wager: 0.5 },
+      ],
+      "b",
+    );
+    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R4" && s.questionIndex === 2);
+    const q2 = engine.getCurrentQuestion()!;
+    engine.submitVote(1, q2.id, "a", 1);
+    engine.submitVote(2, q2.id, "b", 0.5);
+    engine.advance();
+    engine.advance();
+    engine.reveal("b");
+    goTo(engine, (s) => s.phase === "weight_update" && s.roundId === "R4");
+    // Q1: cluster 1 hit (no insurance), cluster 2 miss (no amplify)
+    // Q2: cluster 1 miss α=1, cluster 2 hit α=0.5 — leftover powers already burned
+    const c1After = 2 * Math.exp(1) * Math.exp(-1);
+    const c2After = 2 * Math.exp(-0.5) * Math.exp(0.5);
+    assert.ok(Math.abs(engine.getCluster(1)!.weight - c1After) < 1e-9);
+    assert.ok(Math.abs(engine.getCluster(2)!.weight - c2After) < 1e-9);
+    assert.ok(Math.abs((engine.getCluster(1)!.roundWeightBefore ?? 0) - 2) < 1e-9);
+    assert.ok(Math.abs((engine.getCluster(1)!.roundWeightAfter ?? 0) - c1After) < 1e-9);
+    assert.ok(Math.abs((engine.getCluster(2)!.roundWeightBefore ?? 0) - 2) < 1e-9);
+    assert.ok(Math.abs((engine.getCluster(2)!.roundWeightAfter ?? 0) - c2After) < 1e-9);
+  });
+
+  it("Foresight sees the question but cannot vote until the room clock ends", () => {
+    let now = 8_000_000;
+    const engine = new GameEngine({ clusterCount: 6, now: () => now });
     engine.joinCluster(1, undefined, "s1");
     engine.joinCluster(2, undefined, "s2");
     engine.joinCluster(3, undefined, "s3");
     engine.grantPowers([{ clusterNumber: 1, power: "foresight" }]);
-    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R0");
+    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R4" && s.questionIndex === 1);
     const q = engine.getCurrentQuestion()!;
+    assert.equal(q.id, "r4-q1");
     const early = engine.submitVote(1, q.id, "a", 0.5);
     assert.equal(early.ok, false);
     if (!early.ok) assert.equal(early.error, "foresight_wait");
     assert.equal(engine.clusterView(1)?.foresightWaiting, true);
+    assert.equal(engine.clusterView(1)?.crowdSplit, null);
 
     engine.submitVote(2, q.id, "c", 0.5);
-    assert.equal(engine.clusterView(1)?.foresightWaiting, true);
     engine.submitVote(3, q.id, "c", 1.5);
+    assert.equal(engine.clusterView(1)?.foresightWaiting, true);
+    assert.equal(engine.clusterView(1)?.crowdSplit, null);
 
+    now += 90_000;
+    assert.equal(engine.expireOpenVote(), true);
     const view = engine.clusterView(1);
     assert.equal(view?.foresightWaiting, false);
     assert.equal(engine.getCluster(1)!.power?.used, true);
