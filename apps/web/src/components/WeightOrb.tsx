@@ -122,7 +122,9 @@ void main() {
   col += mix(cyan, cream, 0.35) * rim * 0.85;
   alpha = max(alpha, rim * 0.9);
 
-  gl_FragColor = vec4(col, clamp(alpha, 0.0, 1.0));
+  float a = clamp(alpha, 0.0, 1.0);
+  /* Premultiplied so Safari/iOS composites without a dark square. */
+  gl_FragColor = vec4(col * a, a);
 }
 `;
 
@@ -147,7 +149,7 @@ function startOrbGL(
   const attrs: WebGLContextAttributes = {
     alpha: true,
     antialias: true,
-    premultipliedAlpha: false,
+    premultipliedAlpha: true,
     powerPreference: "low-power",
   };
   const glOrNull = canvas.getContext("webgl", attrs);
@@ -195,7 +197,7 @@ function startOrbGL(
   const uRes = gl.getUniformLocation(program, "uRes");
 
   gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.useProgram(program);
 
   let raf = 0;

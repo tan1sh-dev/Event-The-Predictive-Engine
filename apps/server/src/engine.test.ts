@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { PHASE_SEQUENCE, normalizeTeamDetails, type PhaseStep } from "@engine/shared";
+import { ENSEMBLE_CALCULATING_MS, PHASE_SEQUENCE, previousPlayRound, normalizeTeamDetails, type HostPlayRoundId, type PhaseStep } from "@engine/shared";
+import { ANSWER_KEY } from "./answer-key.ts";
 import { applyAdaBoost, GameEngine, newToken } from "./engine.ts";
 
 function goTo(engine: GameEngine, pred: (step: PhaseStep) => boolean): void {
@@ -9,6 +10,17 @@ function goTo(engine: GameEngine, pred: (step: PhaseStep) => boolean): void {
     engine.advance();
   }
   throw new Error(`Never reached target phase (stuck at ${engine.step.phase})`);
+}
+
+function unlockPlayRound(engine: GameEngine, roundId: HostPlayRoundId): void {
+  if (roundId === "R0") return;
+  if (roundId === "FINAL") {
+    goTo(engine, (s) => s.phase === "freeze");
+    return;
+  }
+  const prev = previousPlayRound(roundId);
+  if (!prev) return;
+  goTo(engine, (s) => s.phase === "weight_update" && s.roundId === prev);
 }
 
 function playQuestion(
@@ -441,6 +453,7 @@ describe("clue look-up then 90s vote", () => {
     const engine = new GameEngine({ clusterCount: 4, now: () => now });
     engine.setClusterCount(4);
     engine.joinCluster(1, undefined, "s1");
+    unlockPlayRound(engine, "R1");
     assert.equal(engine.playRound("R1").ok, true);
     const clueClock = engine.clock();
     assert.equal(clueClock.clueRemainingMs, 30_000);
@@ -456,39 +469,61 @@ describe("clue look-up then 90s vote", () => {
     assert.equal(engine.clock().voteRemainingMs, 90_000);
   });
 
-  it("lets the host jump to Play Round 0–5 and Final testing from the lobby", () => {
+  it("unlocks Play Round 0–5 in order and Final testing only after weights lock", () => {
     const engine = new GameEngine({ clusterCount: 0 });
     const blocked = engine.playRound("R1");
     assert.equal(blocked.ok, false);
 
     engine.setClusterCount(4);
+    assert.deepEqual(engine.snapshot().unlockedPlayRoundIds, ["R0"]);
+    const skip = engine.playRound("R1");
+    assert.equal(skip.ok, false);
+    if (!skip.ok) assert.match(skip.message, /Round 0/);
+
     const r0 = engine.playRound("R0");
     assert.equal(r0.ok, true);
     assert.equal(engine.step.phase, "clue");
     assert.equal(engine.step.roundId, "R0");
     assert.equal(engine.msUntilClueDeadline(), 15_000);
+    assert.equal(engine.playRound("R1").ok, false);
 
-    const r3 = engine.playRound("R3");
-    assert.equal(r3.ok, true);
-    assert.equal(engine.step.phase, "clue");
-    assert.equal(engine.step.roundId, "R3");
-    assert.equal(engine.snapshot().question, null);
+    goTo(engine, (s) => s.phase === "weight_update" && s.roundId === "R0");
+    assert.deepEqual(engine.snapshot().unlockedPlayRoundIds, ["R0", "R1"]);
+    engine.back();
+    assert.ok(engine.snapshot().unlockedPlayRoundIds.includes("R1"));
+    const r1 = engine.playRound("R1");
+    assert.equal(r1.ok, true);
+    assert.equal(engine.step.roundId, "R1");
+    assert.equal(engine.playRound("R0").ok, true);
+    assert.ok(engine.snapshot().unlockedPlayRoundIds.includes("R1"));
+    assert.equal(engine.playRound("R3").ok, false);
+
+    const finEarly = engine.playRound("FINAL");
+    assert.equal(finEarly.ok, false);
+    if (!finEarly.ok) assert.match(finEarly.message, /Lock weights/);
+    assert.equal(engine.snapshot().weightsFrozen, false);
+
+    goTo(engine, (s) => s.phase === "freeze");
+    assert.equal(engine.snapshot().weightsFrozen, true);
+    assert.ok(engine.snapshot().unlockedPlayRoundIds.includes("FINAL"));
+
+    const restored = new GameEngine({ clusterCount: 4 });
+    restored.restore(engine.serialize());
+    assert.ok(restored.snapshot().unlockedPlayRoundIds.includes("FINAL"));
+    assert.equal(restored.snapshot().weightsFrozen, true);
 
     const fin = engine.playRound("FINAL");
     assert.equal(fin.ok, true);
-    assert.equal(engine.step.phase, "clue");
-    assert.equal(engine.step.roundId, "FINAL");
-    const finalClue = engine.snapshot();
-    assert.equal(finalClue.question, null);
-    assert.equal(finalClue.roundTitle, "Final testing");
-    assert.ok(finalClue.clue);
-    assert.equal(engine.snapshot().weightsFrozen, true);
-
-    engine.advance();
     assert.equal(engine.step.phase, "final_inference_open");
-    assert.ok(engine.snapshot().question);
-    assert.equal(engine.snapshot().clue, null);
-    assert.ok(engine.snapshot().voteDeadlineAt);
+    assert.equal(engine.step.roundId, "FINAL");
+    const finalSnap = engine.snapshot();
+    assert.ok(finalSnap.question);
+    assert.equal(finalSnap.question?.wagerRequired, false);
+    assert.equal(finalSnap.question?.media, undefined);
+    assert.equal(finalSnap.clue, null);
+    assert.equal(finalSnap.roundTitle, "Final testing");
+    assert.equal(finalSnap.finalEnvironments?.length, 3);
+    assert.ok(finalSnap.voteDeadlineAt);
   });
 
   it("runs a 15s then 30s flow on Round 0 warm-up", () => {
@@ -503,11 +538,12 @@ describe("clue look-up then 90s vote", () => {
     assert.equal(engine.msUntilVoteDeadline(), 30_000);
   });
 
-  it("runs the 30s then 90s flow on timed scored rounds including the final", () => {
+  it("runs the 30s then 90s flow on timed scored rounds", () => {
     let now = 3_000_000;
     const engine = new GameEngine({ clusterCount: 4, now: () => now });
     engine.setClusterCount(4);
-    for (const roundId of ["R1", "R3", "R4", "R5", "FINAL"] as const) {
+    for (const roundId of ["R1", "R3", "R4", "R5"] as const) {
+      unlockPlayRound(engine, roundId);
       const started = engine.playRound(roundId);
       assert.equal(started.ok, true, `play ${roundId}`);
       assert.equal(engine.step.phase, "clue");
@@ -515,20 +551,54 @@ describe("clue look-up then 90s vote", () => {
       now += 30_000;
       assert.equal(engine.expireClue(), true);
       const after = engine.snapshot().phase;
-      assert.ok(
-        after === "voting_open" || after === "final_inference_open",
-        `${roundId} opened vote, got ${after}`,
-      );
+      assert.equal(after, "voting_open", `${roundId} opened vote, got ${after}`);
       assert.ok(engine.snapshot().question);
       assert.equal(engine.snapshot().clue, null);
       assert.equal(engine.msUntilVoteDeadline(), 90_000);
     }
   });
 
+  it("opens the final testing round with 90s on phones and A/B/C on the projector, then calculates", () => {
+    let now = 3_500_000;
+    const engine = new GameEngine({ clusterCount: 4, now: () => now });
+    engine.setClusterCount(4);
+    unlockPlayRound(engine, "FINAL");
+    const started = engine.playRound("FINAL");
+    assert.equal(started.ok, true);
+    assert.equal(engine.step.phase, "final_inference_open");
+    const open = engine.snapshot();
+    assert.ok(open.question);
+    assert.equal(open.clue, null);
+    assert.equal(open.question?.wagerRequired, false);
+    assert.equal(open.finalEnvironments?.map((p) => p.optionId).join(""), "abc");
+    assert.equal(engine.msUntilVoteDeadline(), 90_000);
+    assert.equal(engine.msUntilClueDeadline(), null);
+
+    engine.submitVote(1, "final", "b", null);
+    now += 89_000;
+    assert.equal(engine.expireOpenVote(), false);
+    now += 1_000;
+    assert.equal(engine.expireOpenVote(), true);
+    assert.equal(engine.step.phase, "final_inference_locked");
+    assert.equal(engine.msUntilCalculatingDeadline(), ENSEMBLE_CALCULATING_MS);
+    assert.equal(engine.snapshot().ensemble, null);
+
+    now += ENSEMBLE_CALCULATING_MS - 1;
+    assert.equal(engine.expireCalculating(), false);
+    now += 1;
+    assert.equal(engine.expireCalculating(), true);
+    assert.equal(engine.step.phase, "ensemble");
+    const bars = engine.snapshot().ensemble;
+    assert.ok(bars);
+    const b = bars.find((x) => x.optionId === "b");
+    assert.ok((b?.pct ?? 0) > 0);
+  });
+
   it("opens Round 2 with no clue clock and starts the vote when the video ends", () => {
     let now = 4_000_000;
     const engine = new GameEngine({ clusterCount: 4, now: () => now });
     engine.setClusterCount(4);
+    unlockPlayRound(engine, "R2");
     assert.equal(engine.playRound("R2").ok, true);
     const clueSnap = engine.snapshot();
     assert.equal(clueSnap.phase, "clue");
@@ -716,6 +786,63 @@ describe("freeze + ensemble", () => {
     assert.equal(a.score, 1);
     assert.ok(b.pct > a.pct);
   });
+
+  it("weighted prediction lands on the answer-key environment (B) even when a bigger, lighter bloc backs a decoy", () => {
+    const engine = new GameEngine({ clusterCount: 6 });
+    for (let n = 1; n <= 5; n++) engine.joinCluster(n, undefined, `s${n}`);
+    goTo(engine, (s) => s.phase === "active_query");
+    // Three light clusters back decoy A; two heavy clusters back the real setup B.
+    engine.setWeight(1, 1);
+    engine.setWeight(2, 1);
+    engine.setWeight(3, 1);
+    engine.setWeight(4, 3);
+    engine.setWeight(5, 3);
+    goTo(engine, (s) => s.phase === "freeze");
+    goTo(engine, (s) => s.phase === "final_inference_open");
+    assert.equal(engine.getCurrentQuestion()!.id, "final");
+    engine.submitVote(1, "final", "a", null);
+    engine.submitVote(2, "final", "a", null);
+    engine.submitVote(3, "final", "a", null);
+    engine.submitVote(4, "final", "b", null);
+    engine.submitVote(5, "final", "b", null);
+    goTo(engine, (s) => s.phase === "ensemble");
+
+    const bars = engine.snapshot().ensemble!;
+    const a = bars.find((x) => x.optionId === "a")!;
+    const b = bars.find((x) => x.optionId === "b")!;
+    // Raw headcount favors A (3 votes vs 2), but frozen weight favors B (6 vs 3).
+    assert.equal(a.score, 3);
+    assert.equal(b.score, 6);
+    const winner = [...bars].sort((x, y) => y.pct - x.pct)[0];
+    assert.equal(winner.optionId, "b");
+    // The engine's weighted call matches the server answer key for the final round.
+    assert.equal(winner.optionId, ANSWER_KEY.final);
+  });
+
+  it("can miss: a heavy decoy bloc makes the weighted engine pick the wrong environment", () => {
+    const engine = new GameEngine({ clusterCount: 6 });
+    for (let n = 1; n <= 4; n++) engine.joinCluster(n, undefined, `s${n}`);
+    goTo(engine, (s) => s.phase === "active_query");
+    // The heaviest, most confident clusters back decoy A — the crowd's learned bias.
+    engine.setWeight(1, 5);
+    engine.setWeight(2, 5);
+    engine.setWeight(3, 1);
+    engine.setWeight(4, 1);
+    goTo(engine, (s) => s.phase === "freeze");
+    goTo(engine, (s) => s.phase === "final_inference_open");
+    engine.submitVote(1, "final", "a", null);
+    engine.submitVote(2, "final", "a", null);
+    engine.submitVote(3, "final", "b", null);
+    engine.submitVote(4, "final", "b", null);
+    goTo(engine, (s) => s.phase === "ensemble");
+
+    const bars = engine.snapshot().ensemble!;
+    const winner = [...bars].sort((x, y) => y.pct - x.pct)[0];
+    // The engine confidently calls A (weight 10) over the real B (weight 2)...
+    assert.equal(winner.optionId, "a");
+    // ...which does NOT match the answer key — a wrong prediction the show must handle.
+    assert.notEqual(winner.optionId, ANSWER_KEY.final);
+  });
 });
 
 describe("phase sequence", () => {
@@ -723,6 +850,10 @@ describe("phase sequence", () => {
     const rounds = PHASE_SEQUENCE.map((s) => s.roundId).filter(Boolean);
     assert.equal(rounds.includes("R6" as never), false);
     assert.equal(PHASE_SEQUENCE.at(-1)?.phase, "debrief");
+    assert.equal(
+      PHASE_SEQUENCE.some((s) => s.phase === "clue" && s.roundId === "FINAL"),
+      false,
+    );
     const engine = new GameEngine({ clusterCount: 20 });
     goTo(engine, (s) => s.phase === "debrief");
     engine.advance();

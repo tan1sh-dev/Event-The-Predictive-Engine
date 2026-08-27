@@ -54,6 +54,7 @@ export function attachSockets(io: Io, engine: GameEngine): void {
   let voteTimer: ReturnType<typeof setTimeout> | null = null;
   let clueTimer: ReturnType<typeof setTimeout> | null = null;
   let powerGrantTimer: ReturnType<typeof setTimeout> | null = null;
+  let calculatingTimer: ReturnType<typeof setTimeout> | null = null;
   let clockPulse: ReturnType<typeof setInterval> | null = null;
 
   const save = () => {
@@ -68,7 +69,8 @@ export function attachSockets(io: Io, engine: GameEngine): void {
     const live =
       engine.msUntilVoteDeadline() != null ||
       engine.msUntilClueDeadline() != null ||
-      engine.msUntilPowerGrantDeadline() != null;
+      engine.msUntilPowerGrantDeadline() != null ||
+      engine.msUntilCalculatingDeadline() != null;
     if (!live) {
       if (clockPulse) {
         clearInterval(clockPulse);
@@ -122,6 +124,24 @@ export function attachSockets(io: Io, engine: GameEngine): void {
     }, remaining);
   };
 
+  const armCalculatingTimer = () => {
+    if (calculatingTimer) {
+      clearTimeout(calculatingTimer);
+      calculatingTimer = null;
+    }
+    const remaining = engine.msUntilCalculatingDeadline();
+    if (remaining == null) return;
+    calculatingTimer = setTimeout(() => {
+      calculatingTimer = null;
+      if (engine.expireCalculating()) {
+        if (engine.step.phase === "ensemble") {
+          io.emit("ensembleResult", { bars: engine.snapshot().ensemble ?? [] });
+        }
+        broadcast();
+      }
+    }, remaining);
+  };
+
   const broadcast = () => {
     const snap = engine.snapshot();
     io.emit("snapshot", snap);
@@ -140,6 +160,7 @@ export function attachSockets(io: Io, engine: GameEngine): void {
     armVoteTimer();
     armClueTimer();
     armPowerGrantTimer();
+    armCalculatingTimer();
     armClockPulse();
     save();
   };
@@ -147,6 +168,7 @@ export function attachSockets(io: Io, engine: GameEngine): void {
   armVoteTimer();
   armClueTimer();
   armPowerGrantTimer();
+  armCalculatingTimer();
   armClockPulse();
 
   io.on("connection", (socket) => {

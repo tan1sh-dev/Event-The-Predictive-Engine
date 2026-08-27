@@ -21,6 +21,8 @@ export const R0_VOTE_DURATION_MS = 30_000;
 export const FORESIGHT_GRACE_MS = 15_000;
 /** Top-3 pick window after Round 3 weight update. */
 export const POWER_GRANT_DURATION_MS = 30_000;
+/** Theatrical pause after the final 90s lock — projector shows “engine calculating”. */
+export const ENSEMBLE_CALCULATING_MS = 6_000;
 /** Insurance, Amplify, and Foresight only resolve on this question. */
 export const POWER_QUESTION_ID = "r4-q1";
 /**
@@ -177,6 +179,13 @@ export interface EnsembleBar {
   pct: number;
 }
 
+export interface FinalEnvironment {
+  optionId: OptionId;
+  letter: string;
+  src: string;
+  caption: string;
+}
+
 export interface GameSnapshot {
   phase: PhaseId;
   stepIndex: number;
@@ -193,8 +202,12 @@ export interface GameSnapshot {
   foresightWaitingCount: number;
   clusterCount: number;
   weightsFrozen: boolean;
+  /** Host Play-round buttons that may be started. Later rounds stay locked until the previous one finishes; FINAL waits for weightsFrozen. */
+  unlockedPlayRoundIds: HostPlayRoundId[];
   topClusterNumbers: number[];
   ensemble: EnsembleBar[] | null;
+  /** Three A/B/C environment stills for the final testing projector. Null outside that round. */
+  finalEnvironments: FinalEnvironment[] | null;
   correctOptionId: OptionId | null;
   joinUrl: string | null;
   /** Epoch ms when the current scored vote window ends. Null if no clock. */
@@ -203,6 +216,8 @@ export interface GameSnapshot {
   clueDeadlineAt: number | null;
   /** Epoch ms when the top-3 power pick window ends. Null if no clock. */
   powerGrantDeadlineAt: number | null;
+  /** Epoch ms when the final “engine calculating” beat ends. Null if no clock. */
+  calculatingDeadlineAt: number | null;
   /** True while Foresight holders have their extra 15s after the room clock. */
   foresightGraceActive: boolean;
   /** Epoch ms when this clue play started. Changes if the host replays the round. */
@@ -217,9 +232,11 @@ export interface GameClock {
   voteDeadlineAt: number | null;
   clueDeadlineAt: number | null;
   powerGrantDeadlineAt: number | null;
+  calculatingDeadlineAt: number | null;
   voteRemainingMs: number | null;
   clueRemainingMs: number | null;
   powerGrantRemainingMs: number | null;
+  calculatingRemainingMs: number | null;
 }
 
 /** Per-cluster private view. Broadcast only to that cluster's socket. */

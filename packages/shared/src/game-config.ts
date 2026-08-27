@@ -1,4 +1,4 @@
-import type { Question, RoundConfig } from "./types.ts";
+import type { FinalEnvironment, Question, RoundConfig } from "./types.ts";
 
 function q(
   roundId: RoundConfig["id"] | "FINAL",
@@ -260,9 +260,15 @@ export const ROUNDS: RoundConfig[] = [
   },
 ];
 
+export const FINAL_ENVIRONMENTS: FinalEnvironment[] = [
+  { optionId: "a", letter: "A", src: "/media/env-a-decoy.png", caption: "Image A" },
+  { optionId: "b", letter: "B", src: "/media/env-b-real.png", caption: "Image B" },
+  { optionId: "c", letter: "C", src: "/media/env-c-decoy.png", caption: "Image C" },
+];
+
 export const FINAL_CLUE: RoundConfig["clue"] = {
   title: "Latent space",
-  body: "Three candidate deep-work environments. One is the volunteer's real setup. Two are decoys. Study them — the question lands on phones when this look-up ends.",
+  body: "Three candidate deep-work environments. One is the volunteer's real setup. Two are decoys. Images stay on the projector for the full 90 seconds while phones vote.",
   media: {
     type: "image",
     src: "/media/final-latent.png",
@@ -275,9 +281,6 @@ export const FINAL_QUESTION: Question = q(
   1,
   "Which AI-generated deep-work environment is the volunteer's real one?",
   ["Environment A", "Environment B", "Environment C"],
-  {
-    media: FINAL_CLUE.media,
-  },
 );
 
 export function getRound(id: RoundConfig["id"]): RoundConfig {

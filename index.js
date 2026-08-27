@@ -690,7 +690,7 @@ const ROUND_CLUES = {
   },
   FINAL: {
     title: "Latent space",
-    body: "Three candidate deep-work environments. One is the volunteer's real setup. Two are decoys. Study them — the question lands on phones when this look-up ends.",
+    body: "Three candidate deep-work environments. One is the volunteer's real setup. Two are decoys.",
     media: {
       type: "image",
       src: "/media/final-latent.png",
@@ -810,8 +810,31 @@ clueBtn.addEventListener("click", openClue);
 clueBack.addEventListener("click", closeClue);
 
 const clueTimerEl = document.getElementById("clue-timer");
+const finalScreen = document.getElementById("final-screen");
+const finalTimerEl = document.getElementById("final-timer");
+const finalGrid = document.getElementById("final-grid");
+const finalWord = document.getElementById("final-word");
+const finalVerdict = document.getElementById("final-verdict");
+const finalCalculating = document.getElementById("final-calculating");
 let stagePhase = "lobby";
 let stageClock = null;
+let finalOpen = false;
+let lastFinalGridKey = "";
+
+const FALLBACK_FINAL_ENV = [
+  { optionId: "a", letter: "A", src: "/media/env-a-decoy.png", caption: "Image A" },
+  { optionId: "b", letter: "B", src: "/media/env-b-real.png", caption: "Image B" },
+  { optionId: "c", letter: "C", src: "/media/env-c-decoy.png", caption: "Image C" },
+];
+
+function isFinalStage(phase) {
+  return (
+    phase === "final_inference_open" ||
+    phase === "final_inference_locked" ||
+    phase === "ensemble" ||
+    phase === "final_reveal"
+  );
+}
 
 function formatVoteClock(ms) {
   const s = Math.max(0, Math.ceil(ms / 1000));
@@ -820,26 +843,23 @@ function formatVoteClock(ms) {
   return `${m}:${r.toString().padStart(2, "0")}`;
 }
 
-function stageRemainingMs() {
-  if (!stageClock) return null;
-  if (stagePhase === "clue") return stageClock.clueRemainingMs;
-  if (stagePhase === "voting_open" || stagePhase === "final_inference_open") {
-    return stageClock.voteRemainingMs;
+function paintTimer(el, ms) {
+  if (!el) return;
+  if (ms == null) {
+    el.hidden = true;
+    el.classList.remove("urgent");
+    return;
   }
-  return null;
+  el.hidden = false;
+  el.textContent = ms <= 0 ? "0:00" : formatVoteClock(ms);
+  el.classList.toggle("urgent", ms <= 5_000);
 }
 
 function renderStageTimer() {
-  if (!clueTimerEl) return;
-  const ms = stageRemainingMs();
-  if (ms == null) {
-    clueTimerEl.hidden = true;
-    clueTimerEl.classList.remove("urgent");
-    return;
-  }
-  clueTimerEl.hidden = false;
-  clueTimerEl.textContent = ms <= 0 ? "0:00" : formatVoteClock(ms);
-  clueTimerEl.classList.toggle("urgent", ms <= 5_000);
+  const clueMs = stagePhase === "clue" ? stageClock?.clueRemainingMs ?? null : null;
+  const voteMs = stagePhase === "final_inference_open" ? stageClock?.voteRemainingMs ?? null : null;
+  paintTimer(clueTimerEl, clueMs);
+  paintTimer(finalTimerEl, voteMs);
 }
 
 function armClueTick(snap) {
@@ -866,6 +886,112 @@ window.applyEngineClock = function applyEngineClock(clock) {
   renderStageTimer();
 };
 
+function finalPanelsFrom(snap) {
+  const panels = Array.isArray(snap?.finalEnvironments) && snap.finalEnvironments.length
+    ? snap.finalEnvironments
+    : FALLBACK_FINAL_ENV;
+  return panels.map((panel, i) => ({
+    optionId: panel.optionId ?? ["a", "b", "c"][i],
+    letter: panel.letter ?? String.fromCharCode(65 + i),
+    src: panel.src,
+    caption: panel.caption ?? `Image ${String.fromCharCode(65 + i)}`,
+  }));
+}
+
+function ensureFinalGrid(snap) {
+  if (!finalGrid) return [];
+  const panels = finalPanelsFrom(snap);
+  const key = panels.map((p) => `${p.optionId}:${p.src}`).join("|");
+  if (key === lastFinalGridKey && finalGrid.childElementCount === panels.length) return panels;
+  lastFinalGridKey = key;
+  finalGrid.innerHTML = panels
+    .map(
+      (panel) => `
+      <article class="final-card" data-option="${panel.optionId}">
+        <span class="final-letter">${panel.letter}</span>
+        <figure><img src="${panel.src}" alt="${panel.caption}" /></figure>
+        <div class="final-meta">
+          <span class="final-caption">${panel.caption}</span>
+          <span class="final-pct" hidden>—</span>
+        </div>
+        <div class="final-bar" hidden><span></span></div>
+      </article>`
+    )
+    .join("");
+  return panels;
+}
+
+function renderFinalScreen(snap) {
+  if (!finalScreen) return;
+  const panels = ensureFinalGrid(snap);
+  const calculating = snap.phase === "final_inference_locked";
+  const result = snap.phase === "ensemble" || snap.phase === "final_reveal";
+  finalScreen.classList.toggle("is-calculating", calculating);
+  finalScreen.classList.toggle("is-result", result);
+  if (finalCalculating) finalCalculating.hidden = !calculating;
+  if (finalWord) {
+    finalWord.textContent = calculating ? "Calculating" : result ? "Prediction" : "Test set";
+  }
+  const bars = Array.isArray(snap.ensemble) ? snap.ensemble : [];
+  const ranked = [...bars].sort((a, b) => (b.pct ?? 0) - (a.pct ?? 0));
+  const pick = result && ranked.some((b) => (b.score ?? 0) > 0) ? ranked[0] : null;
+  if (finalVerdict) {
+    if (pick) {
+      const letter = panels.find((p) => p.optionId === pick.optionId)?.letter ?? pick.optionId;
+      finalVerdict.hidden = false;
+      finalVerdict.textContent = `Engine predicts  ${letter}`;
+    } else {
+      finalVerdict.hidden = true;
+      finalVerdict.textContent = "";
+    }
+  }
+  for (const panel of panels) {
+    const card = finalGrid?.querySelector(`[data-option="${panel.optionId}"]`);
+    if (!card) continue;
+    const bar = bars.find((b) => b.optionId === panel.optionId);
+    const pctEl = card.querySelector(".final-pct");
+    const barWrap = card.querySelector(".final-bar");
+    const barFill = barWrap?.querySelector("span");
+    const showPct = result && bar;
+    if (pctEl) {
+      pctEl.hidden = !showPct;
+      if (showPct) pctEl.textContent = `${Math.round((bar.pct ?? 0) * 100)}%`;
+    }
+    if (barWrap) {
+      barWrap.hidden = !showPct;
+      if (barFill) barFill.style.width = showPct ? `${Math.max(4, (bar.pct ?? 0) * 100)}%` : "0%";
+    }
+    card.classList.toggle("is-pick", Boolean(pick && pick.optionId === panel.optionId));
+  }
+}
+
+function openFinal(snap) {
+  if (inLobby) return;
+  if (demoOpen) closeDemo();
+  if (lbOpen) closeLeaderboard();
+  if (clueOpen) closeClue();
+  renderFinalScreen(snap);
+  finalOpen = true;
+  finalScreen?.classList.add("open");
+  finalScreen?.setAttribute("aria-hidden", "false");
+  setHudHidden(true);
+}
+
+function closeFinal() {
+  finalOpen = false;
+  finalScreen?.classList.remove("open");
+  finalScreen?.classList.remove("is-calculating", "is-result");
+  finalScreen?.setAttribute("aria-hidden", "true");
+  if (finalCalculating) finalCalculating.hidden = true;
+  if (finalVerdict) {
+    finalVerdict.hidden = true;
+    finalVerdict.textContent = "";
+  }
+  lastFinalGridKey = "";
+  if (finalGrid) finalGrid.innerHTML = "";
+  setHudHidden(false);
+}
+
 const demoBtn = document.getElementById("demo-btn");
 const demoScreen = document.getElementById("demo-screen");
 const demoBack = document.getElementById("demo-back");
@@ -887,12 +1013,14 @@ function setLobbyMode(inLobbyNow) {
   if (!inLobby && demoOpen) closeDemo();
   if (inLobby && lbOpen) closeLeaderboard();
   if (inLobby && clueOpen) closeClue();
+  if (inLobby && finalOpen) closeFinal();
 }
 
 function openLeaderboard() {
   if (inLobby) return;
   if (demoOpen) closeDemo();
   if (clueOpen) closeClue();
+  if (finalOpen) closeFinal();
   lbOpen = true;
   renderFullLeaderboard();
   lbScreen?.classList.add("open");
@@ -913,6 +1041,7 @@ lbBack?.addEventListener("click", closeLeaderboard);
 function openDemo() {
   if (!inLobby) return;
   if (clueOpen) closeClue();
+  if (finalOpen) closeFinal();
   if (lbOpen) closeLeaderboard();
   demoOpen = true;
   demoFallback?.classList.remove("show");
@@ -976,6 +1105,11 @@ window.applyEngineSnapshot = function applyEngineSnapshot(snap) {
     openClue();
   } else if (clueOpen) {
     closeClue();
+  }
+  if (isFinalStage(snap.phase)) {
+    openFinal(snap);
+  } else if (finalOpen) {
+    closeFinal();
   }
 };
 

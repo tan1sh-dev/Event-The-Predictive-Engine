@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Neural Network Topology</title>
+  <link rel="icon" type="image/png" href="./assets/cc-new-logo.png" />
+  <link rel="apple-touch-icon" href="./assets/cc-new-logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=GFS+Didot&display=swap" rel="stylesheet" />
@@ -637,6 +639,262 @@
       #clue-media { inset: 64px 16px 20px; }
     }
 
+    #final-screen {
+      padding: 0;
+      align-items: stretch;
+      justify-content: stretch;
+    }
+    #final-screen .final-layout {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    #final-round {
+      position: absolute;
+      top: 28px;
+      left: 36px;
+      z-index: 2;
+      margin: 0;
+      font-family: "GFS Didot", Didot, serif;
+      font-size: clamp(22px, 2.4vw, 34px);
+      font-weight: 400;
+      line-height: 1;
+      letter-spacing: 0.14em;
+      color: rgba(244, 251, 255, 0.92);
+      white-space: nowrap;
+    }
+    .screen.open #final-round {
+      animation: roundTick 700ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    #final-word {
+      position: absolute;
+      left: 36px;
+      top: 72px;
+      z-index: 2;
+      margin: 0;
+      font-family: "GFS Didot", Didot, serif;
+      font-size: clamp(13px, 1.3vw, 16px);
+      font-weight: 400;
+      line-height: 1;
+      letter-spacing: 0.42em;
+      text-transform: uppercase;
+      color: rgba(180, 230, 255, 0.55);
+    }
+    .screen.open #final-word {
+      animation: titleReveal 780ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    #final-screen .final-chrome {
+      position: absolute;
+      top: 24px;
+      right: 32px;
+      z-index: 4;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      pointer-events: none;
+    }
+    #final-timer {
+      min-width: 120px;
+      padding: 8px 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(125, 255, 176, 0.35);
+      background: rgba(7, 24, 18, 0.72);
+      font-family: "GFS Didot", Didot, serif;
+      font-size: 28px;
+      letter-spacing: 0.04em;
+      color: #7dffb0;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    #final-timer[hidden] { display: none; }
+    #final-timer.urgent {
+      border-color: rgba(255, 90, 168, 0.5);
+      color: #ff8ec4;
+    }
+    #final-verdict {
+      position: absolute;
+      left: 50%;
+      top: 24px;
+      z-index: 3;
+      transform: translateX(-50%);
+      margin: 0;
+      padding: 8px 22px;
+      border-radius: 999px;
+      border: 1px solid rgba(120, 230, 255, 0.35);
+      background: rgba(6, 12, 22, 0.78);
+      font-family: "GFS Didot", Didot, serif;
+      font-size: clamp(16px, 2vw, 24px);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #d7fbff;
+      white-space: nowrap;
+    }
+    #final-verdict[hidden] { display: none; }
+    #final-grid {
+      position: absolute;
+      inset: 96px 40px 40px;
+      margin: 0;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 28px;
+      align-items: stretch;
+    }
+    .final-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      border-radius: 22px;
+      border: 1px solid rgba(246, 239, 228, 0.12);
+      background: rgba(4, 6, 12, 0.55);
+      overflow: hidden;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+      transition: border-color 420ms ease, box-shadow 420ms ease, transform 420ms ease;
+    }
+    .final-card.is-pick {
+      border-color: rgba(51, 230, 255, 0.7);
+      box-shadow:
+        0 24px 64px rgba(0, 0, 0, 0.45),
+        0 0 48px rgba(51, 230, 255, 0.28);
+      transform: translateY(-4px);
+    }
+    .final-card figure {
+      flex: 1;
+      min-height: 0;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+    }
+    .final-card img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+    .final-letter {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      z-index: 1;
+      width: 46px;
+      height: 46px;
+      display: grid;
+      place-items: center;
+      border-radius: 14px;
+      background: rgba(6, 10, 18, 0.82);
+      border: 1px solid rgba(120, 230, 255, 0.35);
+      font-family: "GFS Didot", Didot, serif;
+      font-size: 26px;
+      color: #e8f4ff;
+    }
+    .final-card.is-pick .final-letter {
+      border-color: rgba(51, 230, 255, 0.8);
+      color: #7af0ff;
+      box-shadow: 0 0 18px rgba(51, 230, 255, 0.35);
+    }
+    .final-meta {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px 14px;
+      background: rgba(6, 10, 18, 0.72);
+    }
+    .final-caption {
+      font-size: 13px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: rgba(180, 230, 255, 0.55);
+    }
+    .final-pct {
+      font-family: "GFS Didot", Didot, serif;
+      font-size: clamp(28px, 3.2vw, 42px);
+      letter-spacing: 0.04em;
+      color: #d7fbff;
+      font-variant-numeric: tabular-nums;
+    }
+    .final-pct[hidden] { display: none; }
+    .final-card.is-pick .final-pct { color: #7af0ff; }
+    .final-bar {
+      height: 4px;
+      margin: 0 16px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+    .final-bar[hidden] { display: none; }
+    .final-bar > span {
+      display: block;
+      height: 100%;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #33e6ff, #39ff9d);
+      transition: width 900ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    #final-screen.is-calculating .final-card img {
+      filter: brightness(0.38) saturate(0.7);
+    }
+    #final-calculating {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(5, 6, 10, 0.62);
+      backdrop-filter: blur(8px);
+    }
+    #final-calculating[hidden] { display: none; }
+    #final-calculating .calc-kicker {
+      font-size: 12px;
+      letter-spacing: 0.42em;
+      text-transform: uppercase;
+      color: rgba(180, 230, 255, 0.55);
+    }
+    #final-calculating h2 {
+      margin-top: 14px;
+      font-family: "GFS Didot", Didot, serif;
+      font-size: clamp(32px, 5vw, 64px);
+      font-weight: 400;
+      letter-spacing: 0.12em;
+      color: #e8f4ff;
+      animation: calcPulse 1.6s ease-in-out infinite;
+    }
+    #final-calculating .calc-rings {
+      position: relative;
+      width: min(28vmin, 220px);
+      height: min(28vmin, 220px);
+      margin-bottom: 18px;
+    }
+    #final-calculating .calc-rings span {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 1px solid rgba(140, 235, 255, 0.35);
+      animation: calcRing 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+    }
+    #final-calculating .calc-rings span:nth-child(2) { animation-delay: 0.8s; }
+    #final-calculating .calc-rings span:nth-child(3) { animation-delay: 1.6s; }
+    @keyframes calcPulse {
+      0%, 100% { opacity: 0.72; letter-spacing: 0.12em; }
+      50% { opacity: 1; letter-spacing: 0.2em; }
+    }
+    @keyframes calcRing {
+      0% { transform: scale(0.35); opacity: 0.7; }
+      100% { transform: scale(1.15); opacity: 0; }
+    }
+    @media (max-width: 720px) {
+      #final-round { top: 16px; left: 16px; }
+      #final-word { top: 52px; left: 16px; }
+      #final-screen .final-chrome { top: 12px; right: 14px; }
+      #final-grid { inset: 72px 12px 16px; gap: 10px; }
+      .final-letter { width: 34px; height: 34px; font-size: 18px; }
+    }
+
     .dock-btn {
       position: fixed;
       right: 32px;
@@ -677,7 +935,9 @@
       .stage-bloom, .stage-scan, .stage-pulse span, .stage-motes i, .stage-grain,
       #logo, .logo-stack, .logo-stack::before, #leaderboard::before,
       .lb-row, .lb-row.weight-up .weight, #round-label.tick,
-      .screen.open .panel, .screen.open #clue-round, .screen.open #clue-word {
+      .screen.open .panel, .screen.open #clue-round, .screen.open #clue-word,
+      .screen.open #final-round, .screen.open #final-word, #final-calculating h2,
+      #final-calculating .calc-rings span {
         animation: none !important;
       }
       .btn { transition: none; }
@@ -762,6 +1022,23 @@
       </div>
       <p id="clue-word">CLUE</p>
       <figure id="clue-media"></figure>
+    </div>
+  </section>
+
+  <section id="final-screen" class="screen" aria-hidden="true">
+    <div class="final-layout">
+      <h1 id="final-round">Final testing</h1>
+      <p id="final-word">Test set</p>
+      <p id="final-verdict" hidden></p>
+      <div class="final-chrome">
+        <div id="final-timer" hidden>1:30</div>
+      </div>
+      <div id="final-grid"></div>
+      <div id="final-calculating" hidden>
+        <div class="calc-rings" aria-hidden="true"><span></span><span></span><span></span></div>
+        <p class="calc-kicker">Weighted vote</p>
+        <h2>Engine calculating</h2>
+      </div>
     </div>
   </section>
 

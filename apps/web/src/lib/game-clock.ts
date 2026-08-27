@@ -1,6 +1,6 @@
 import type { GameClock } from "@engine/shared";
 
-export type ClockKind = "vote" | "clue" | "power";
+export type ClockKind = "vote" | "clue" | "power" | "calculating";
 
 let latest: GameClock | null = null;
 const listeners = new Set<() => void>();
@@ -28,13 +28,17 @@ export function remainingMsFromClock(kind: ClockKind, deadlineAt: number | null 
       ? latest.voteDeadlineAt
       : kind === "clue"
         ? latest.clueDeadlineAt
-        : latest.powerGrantDeadlineAt;
+        : kind === "calculating"
+          ? latest.calculatingDeadlineAt
+          : latest.powerGrantDeadlineAt;
   const remaining =
     kind === "vote"
       ? latest.voteRemainingMs
       : kind === "clue"
         ? latest.clueRemainingMs
-        : latest.powerGrantRemainingMs;
+        : kind === "calculating"
+          ? latest.calculatingRemainingMs
+          : latest.powerGrantRemainingMs;
   if (deadline == null || remaining == null) return null;
   if (deadlineAt != null && deadline !== deadlineAt) return null;
   return remaining;

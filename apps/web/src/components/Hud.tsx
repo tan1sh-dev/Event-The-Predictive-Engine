@@ -21,7 +21,10 @@ function lockStatus(
   if (hasVoted) return { label: "Locked", tone: "locked" };
   if (foresightWaiting) return { label: "Hold", tone: "gold" };
   if (foresightGrace) return { label: "Extra", tone: "gold" };
-  if (phase === "voting_locked" || phase === "final_inference_locked") {
+  if (phase === "final_inference_locked") {
+    return { label: "Calc", tone: "cyan" };
+  }
+  if (phase === "voting_locked") {
     return { label: "Missed", tone: "danger" };
   }
   return { label: "Open", tone: "open" };

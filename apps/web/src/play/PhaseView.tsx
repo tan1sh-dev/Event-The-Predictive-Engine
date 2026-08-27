@@ -19,6 +19,7 @@ import Pressable from "../components/Pressable.tsx";
 import VoteTimer, { useVoteRemainingMs } from "../components/VoteTimer.tsx";
 import WagerArc from "../components/WagerArc.tsx";
 import WeightOrb from "../components/WeightOrb.tsx";
+import { engineVerdict } from "../lib/labels.ts";
 
 const LETTER: Record<string, string> = { a: "A", b: "B", c: "C", d: "D" };
 
@@ -161,7 +162,7 @@ function VoteForm({
 
   return (
     <div className="flex flex-col gap-4 pb-8">
-      {question.media && (
+      {question.media && question.roundId !== "FINAL" && (
         <Media src={question.media.src} type={question.media.type} caption={question.media.caption} />
       )}
       <h2 className="font-display text-[1.65rem] leading-tight font-bold">{question.prompt}</h2>
@@ -406,6 +407,19 @@ export default function PhaseView({
       (!view.pendingVote.questionId || view.pendingVote.questionId === question?.id)
         ? view.pendingVote
         : null;
+    if (snapshot.phase === "final_inference_locked") {
+      return (
+        <WaitCard
+          kicker="Engine"
+          title="Engine calculating."
+          body={
+            pending
+              ? `${optionLine(question, pending.optionId)} is in. Weights are frozen. Watch the projector for the prediction.`
+              : "You didn’t lock in. The engine is still aggregating the weighted vote. Watch the projector."
+          }
+        />
+      );
+    }
     if (!pending) {
       return (
         <WaitCard
@@ -422,7 +436,7 @@ export default function PhaseView({
         body={
           pending.wager != null
             ? `${optionLine(question, pending.optionId)}. Wager α = ${pending.wager.toFixed(1)}. Hold the phone — the host is about to reveal.`
-            : `${optionLine(question, pending.optionId)}. No wager on the final inference. The room is frozen. Watch the projector.`
+            : `${optionLine(question, pending.optionId)}. Hold the phone — the host is about to reveal.`
         }
       />
     );
@@ -604,7 +618,7 @@ export default function PhaseView({
       <WaitCard
         kicker="Freeze"
         title="Weights locked."
-        body="The engine stops learning. One last A / B / C from the latent space."
+        body="The engine stops learning. Next: three environments on the projector, question on this phone. No wager — weights stay frozen."
       />
     );
   }
@@ -642,23 +656,61 @@ export default function PhaseView({
   }
 
   if (snapshot.phase === "final_reveal") {
-    const pick = snapshot.ensemble
-      ? [...snapshot.ensemble].sort((a, b) => b.pct - a.pct)[0]
-      : null;
+    const verdict = engineVerdict(snapshot.ensemble, snapshot.correctOptionId);
+    const pickLetter = verdict.pick ? LETTER[verdict.pick.optionId] ?? verdict.pick.optionId : "—";
+    const truthLetter = snapshot.correctOptionId
+      ? LETTER[snapshot.correctOptionId] ?? snapshot.correctOptionId
+      : "—";
+
+    if (verdict.status === "pending") {
+      return (
+        <WaitCard
+          kicker="Reveal"
+          title={verdict.pick ? `The engine called ${pickLetter}.` : "The volunteer reads the prompt."}
+          body={
+            verdict.pick
+              ? "Weighted votes are in. Watch the stage — the volunteer reveals which environment is real."
+              : "No signals were locked into the engine. Watch the stage for the truth."
+          }
+        />
+      );
+    }
+
+    const hit = verdict.status === "hit";
     return (
-      <WaitCard
-        kicker="Reveal"
-        title={
-          snapshot.correctOptionId
-            ? `Truth was ${LETTER[snapshot.correctOptionId] ?? snapshot.correctOptionId}.`
-            : "The volunteer reads the prompt."
-        }
-        body={
-          pick
-            ? `The ensemble called ${LETTER[pick.optionId] ?? pick.optionId}. Highest-weight cluster wins the night.`
-            : "Watch the stage."
-        }
-      />
+      <div
+        className={`mt-8 rounded-[28px] p-6 text-center ring-1 ${
+          hit ? "animate-pop bg-mint/12 ring-mint/40" : "animate-shake bg-magenta/12 ring-magenta/40"
+        }`}
+      >
+        <p className="text-[11px] font-bold uppercase tracking-[0.28em]">
+          {hit ? "Engine hit" : "Engine miss"}
+        </p>
+        <h2 className="font-display mt-2 text-4xl font-bold">
+          {hit ? "The engine was right." : "The engine got it wrong."}
+        </h2>
+        <div className="mt-5 space-y-3 text-sm leading-relaxed text-cream/80">
+          <p>
+            <span className="block text-[11px] font-bold uppercase tracking-[0.22em] text-cream/40">
+              Engine’s call
+            </span>
+            {pickLetter}
+            {verdict.pick ? ` · ${Math.round(verdict.pick.pct * 100)}% of the weight` : ""}
+            {verdict.tie ? " · won a tie-break" : ""}
+          </p>
+          <p>
+            <span className="block text-[11px] font-bold uppercase tracking-[0.22em] text-cream/40">
+              The truth
+            </span>
+            {truthLetter}
+          </p>
+        </div>
+        <p className="mt-5 text-sm leading-relaxed text-cream/70">
+          {hit
+            ? "The weighted crowd converged on the real environment. That’s the ensemble working."
+            : "A confident weighted majority still missed. Even a boosted crowd can overfit its training — that’s exactly why we hold out a test."}
+        </p>
+      </div>
     );
   }
 

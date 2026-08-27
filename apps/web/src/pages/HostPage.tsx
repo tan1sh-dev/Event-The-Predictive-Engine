@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ENSEMBLE_CALCULATING_MS,
   FORESIGHT_GRACE_MS,
   HOST_PLAY_ROUNDS,
   MAX_CLUSTER_COUNT,
@@ -14,7 +15,7 @@ import {
 } from "@engine/shared";
 import Pressable from "../components/Pressable.tsx";
 import { useEngineSocket } from "../hooks/useClusterSession.ts";
-import { LETTER, PHASE_LABEL } from "../lib/labels.ts";
+import { LETTER, PHASE_LABEL, engineVerdict } from "../lib/labels.ts";
 import VoteTimer, { useVoteRemainingMs } from "../components/VoteTimer.tsx";
 
 const PASS_KEY = "engine.hostPassword";
@@ -42,6 +43,100 @@ function HostClockCard({
         </>
       )}
     </div>
+  );
+}
+
+function FinalVerdictPanel({ snap }: { snap: GameSnapshot }) {
+  const verdict = engineVerdict(snap.ensemble, snap.correctOptionId);
+  const bars = snap.ensemble ?? [];
+  const pickId = verdict.pick?.optionId ?? null;
+  const truthId = verdict.correctOptionId;
+
+  const badge =
+    verdict.status === "hit"
+      ? { text: "Engine HIT", cls: "bg-mint/20 text-mint ring-mint/50" }
+      : verdict.status === "miss"
+        ? { text: "Engine MISS", cls: "bg-magenta/20 text-magenta ring-magenta/50" }
+        : { text: "Awaiting reveal", cls: "bg-white/10 text-cream/60 ring-white/20" };
+
+  const script =
+    verdict.status === "hit"
+      ? "Call it: the weighted crowd converged on the real environment. Name the heaviest cluster and crown them."
+      : verdict.status === "miss"
+        ? "Own it out loud — the engine was confident and wrong. Pivot to the lesson: boosting amplifies the crowd’s shared bias, so a held-out test can beat a trained ensemble. That is the whole point of tonight."
+        : verdict.pick
+          ? `The engine is leaning ${LETTER[pickId!] ?? pickId}. Mark the real environment (A/B/C above) to lock the verdict before you advance.`
+          : "No weighted signals landed. Mark the real environment above, then narrate that an empty engine has nothing to predict.";
+
+  return (
+    <section className="mt-6 rounded-3xl bg-white/6 p-5 ring-1 ring-white/10">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-200/70">
+          Final verdict
+        </p>
+        <span
+          className={`rounded-full px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.18em] ring-1 ${badge.cls}`}
+        >
+          {badge.text}
+        </span>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-6 text-sm">
+        <div>
+          <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-cream/40">
+            Engine’s call
+          </span>
+          <span className="font-display text-2xl">
+            {pickId ? LETTER[pickId] ?? pickId : "—"}
+          </span>
+          {verdict.tie && <span className="ml-2 text-[11px] text-gold">tie-break</span>}
+        </div>
+        <div>
+          <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-cream/40">
+            Marked answer
+          </span>
+          <span className="font-display text-2xl">
+            {truthId ? LETTER[truthId] ?? truthId : "—"}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-col gap-2">
+        {bars.map((bar) => {
+          const isPick = bar.optionId === pickId;
+          const isTruth = bar.optionId === truthId;
+          return (
+            <div key={bar.optionId}>
+              <div className="mb-1 flex justify-between text-sm">
+                <span>
+                  {LETTER[bar.optionId] ?? bar.optionId} · {bar.label}
+                  {isPick && <span className="ml-2 text-[11px] text-cyan">engine</span>}
+                  {isTruth && <span className="ml-2 text-[11px] text-mint">truth</span>}
+                </span>
+                <span className="tabular-nums text-cream/70">
+                  {Math.round(bar.pct * 100)}% · w {bar.score.toFixed(2)}
+                </span>
+              </div>
+              <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className={`h-full rounded-full ${
+                    isTruth ? "bg-mint" : isPick ? "bg-magenta" : "bg-cyan/60"
+                  }`}
+                  style={{ width: `${Math.max(3, bar.pct * 100)}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="mt-4 rounded-2xl bg-black/25 px-4 py-3 text-sm leading-relaxed text-cream/75 ring-1 ring-white/10">
+        <span className="mr-2 text-[11px] font-bold uppercase tracking-[0.2em] text-cyan-200/70">
+          Say
+        </span>
+        {script}
+      </p>
+    </section>
   );
 }
 
@@ -149,17 +244,21 @@ export default function HostPage() {
     snap?.serverTime,
     "power",
   );
+  const calculatingRemainingMs = useVoteRemainingMs(
+    snap?.calculatingDeadlineAt,
+    snap?.serverTime,
+    "calculating",
+  );
 
   const nextLabel = (() => {
     if (!snap) return "Next";
     if (snap.phase === "lobby" && snap.clusterCount < MIN_CLUSTER_COUNT) return "Set clusters first";
-    if (
-      (snap.phase === "reveal" || snap.phase === "final_inference_locked") &&
-      !snap.correctOptionId
-    ) {
+    if (snap.phase === "reveal" && !snap.correctOptionId) {
       return "Mark answer first";
     }
     if (snap.phase === "clue") return "Skip to question";
+    if (snap.phase === "final_inference_open") return "Skip to calculating";
+    if (snap.phase === "final_inference_locked") return "Show prediction";
     if (next?.phase === "voting_open") return `Reveal question · Q${next.questionIndex}`;
     if (next) return `Next · ${PHASE_LABEL[next.phase]}`;
     return "End";
@@ -207,9 +306,10 @@ export default function HostPage() {
     return <p className="grid min-h-dvh place-items-center">Connecting…</p>;
   }
 
-  const needsReveal =
-    (snap.phase === "reveal" || snap.phase === "final_inference_locked") && !snap.correctOptionId;
+  const needsReveal = snap.phase === "reveal" && !snap.correctOptionId;
   const question = snap.question;
+  const canMarkAnswer =
+    snap.phase === "reveal" || snap.phase === "ensemble" || snap.phase === "final_reveal";
 
   return (
       <div className="mx-auto min-h-dvh max-w-6xl px-4 py-5 pb-10">
@@ -270,6 +370,16 @@ export default function HostPage() {
               />
             </div>
           )}
+          {calculatingRemainingMs != null && (
+            <div className="mt-2 flex justify-end">
+              <VoteTimer
+                remainingMs={calculatingRemainingMs}
+                totalMs={ENSEMBLE_CALCULATING_MS}
+                compact
+                kicker="Calculating"
+              />
+            </div>
+          )}
         </div>
       </header>
 
@@ -303,13 +413,14 @@ export default function HostPage() {
         </p>
         <h2 className="font-display mt-1 text-2xl">Play round</h2>
         <p className="mt-2 text-sm text-cream/60">
-          Projector plays the clue first, then takes it down the moment the question starts.
-          Phones stay on “Look up the clue” until it ends — 30s look-up on scored rounds, 15s
-          on Round 0, or the full SIP video on Round 2. Then the vote clock starts.
+          Play in order — each round unlocks after the previous weight update.
+          Final testing stays locked until weights are frozen. Training rounds play
+          the clue on the projector first; phones wait until it ends. The final
+          testing round is different: Image A / B / C stay on the projector for
+          the full 90 seconds while phones vote with no wager. When the clock hits
+          zero the engine calculates, then the projector shows the prediction.
         </p>
-        {(snap.phase === "clue" ||
-          snap.phase === "voting_open" ||
-          snap.phase === "final_inference_open") && (
+        {(snap.phase === "clue" || snap.phase === "voting_open") && (
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <HostClockCard
               label="Clue"
@@ -337,20 +448,48 @@ export default function HostPage() {
             />
           </div>
         )}
+        {(snap.phase === "final_inference_open" || snap.phase === "final_inference_locked") && (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <HostClockCard
+              label="Question"
+              remainingMs={snap.phase === "final_inference_open" ? remainingMs : null}
+              totalMs={voteDurationForRound("FINAL")}
+              fallback="Done"
+            />
+            <HostClockCard
+              label="Engine calculating"
+              remainingMs={calculatingRemainingMs}
+              totalMs={ENSEMBLE_CALCULATING_MS}
+              fallback={snap.phase === "final_inference_open" ? "After 90s" : "—"}
+            />
+          </div>
+        )}
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {HOST_PLAY_ROUNDS.map((round) => {
+          {HOST_PLAY_ROUNDS.map((round, i) => {
             const active = snap.roundId === round.id && snap.phase !== "lobby";
-            const blocked = snap.clusterCount < MIN_CLUSTER_COUNT;
+            const unlocked = snap.unlockedPlayRoundIds.includes(round.id);
+            const blocked = !unlocked;
+            const prev = HOST_PLAY_ROUNDS[i - 1];
+            const subtitle =
+              snap.clusterCount < MIN_CLUSTER_COUNT
+                ? "Set clusters first"
+                : unlocked
+                  ? round.title
+                  : round.id === "FINAL"
+                    ? "Unlocks after weights lock"
+                    : prev
+                      ? `Finish ${prev.id} first`
+                      : "Locked";
             return (
               <Pressable
                 key={round.id}
-                variant={active ? "go" : "mint"}
+                variant={active ? "go" : unlocked ? "mint" : "ghost"}
                 className="w-full !rounded-3xl !py-4"
                 disabled={blocked}
                 onClick={() => playRound(round.id)}
               >
                 <span className="block">{round.label}</span>
-                <span className="mt-1 block text-[12px] font-semibold opacity-75">{round.title}</span>
+                <span className="mt-1 block text-[12px] font-semibold opacity-75">{subtitle}</span>
               </Pressable>
             );
           })}
@@ -416,8 +555,11 @@ export default function HostPage() {
                 className={`rounded-2xl px-4 py-3 text-left ring-1 transition ${
                   snap.correctOptionId === opt.id
                     ? "bg-mint/20 ring-mint"
-                    : "bg-black/20 ring-white/10 hover:ring-cyan/50"
+                    : canMarkAnswer
+                      ? "bg-black/20 ring-white/10 hover:ring-cyan/50"
+                      : "bg-black/20 ring-white/10 opacity-60"
                 }`}
+                disabled={!canMarkAnswer}
               >
                 <span className="font-extrabold text-cyan">{LETTER[opt.id] ?? opt.id}</span>
                 <span className="ml-2">{opt.label}</span>
@@ -426,12 +568,17 @@ export default function HostPage() {
           </div>
           {(snap.phase === "reveal" ||
             snap.phase === "voting_locked" ||
-            snap.phase === "final_inference_locked") && (
+            snap.phase === "ensemble" ||
+            snap.phase === "final_reveal") && (
             <Pressable className="mt-4" variant="gold" onClick={() => reveal("")}>
               Reveal using answer key
             </Pressable>
           )}
         </section>
+      )}
+
+      {(snap.phase === "ensemble" || snap.phase === "final_reveal") && (
+        <FinalVerdictPanel snap={snap} />
       )}
 
       {snap.phase === "power_grant" && (
