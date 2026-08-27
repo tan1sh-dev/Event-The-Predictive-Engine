@@ -24,38 +24,34 @@ function q(
 export const ROUNDS: RoundConfig[] = [
   {
     id: "R0",
-    title: "Main character energy",
-    theme: "Vibe check — practice vote + wager; weights discarded",
+    title: "Viral clip",
+    theme: "Warm-up — watch the clip, then vote; weights discarded",
     calibration: true,
     clue: {
-      title: "Main character energy",
+      title: "Viral clip",
       body: [
-        "Lock screen · 2:17 AM · 47 unread",
-        "",
-        '• Spotify — "Main Character Era" · playing · 2h 41m',
-        "• Blinkit — Order delivered: Maggi + cold coffee",
-        "• LinkedIn — Someone viewed your profile (it was you)",
-        '• WhatsApp — Mom: "beta call back" (left on read · 6h)',
-        '• Calendar — "Start assignment" · overdue by 4 days',
-        "• Instagram — Your story got 3 views (all from the same person)",
-        '• Notes — "touch grass after midterms (real this time)"',
+        "Watch the clip on the projector.",
         "",
         "Practice round — weights do not carry forward.",
       ].join("\n"),
-      media: { type: "screenshot", src: "/media/r0-lockscreen.png", caption: "Lock screen · 2:17 AM" },
+      media: {
+        type: "video",
+        src: "/media/r0-ravi-kishan.mp4",
+        caption: "Viral clip",
+      },
     },
     questions: [
-      q("R0", 1, "Based only on this lock screen, what's their actual 2 AM priority?", [
-        "Inbox zero and calling Mom back",
-        "Building a LinkedIn personal brand",
-        "Surviving the night on Maggi, playlists, and denial",
-        "Finally starting the overdue assignment",
+      q("R0", 1, "Who is this famous internet personality?", [
+        "Arjun Kapoor",
+        "Ravi Kishan",
+        "Puneeth Superstar",
+        "Rehman Dakait",
       ]),
-      q("R0", 2, "If you had to bet one chip on their next move, what are they most likely to do?", [
-        "Close Spotify and touch grass",
-        "Reply to Mom with a voice note",
-        'Open the assignment… then open Instagram "for one sec"',
-        "Actually finish the Notes app promise",
+      q("R0", 2, "Which is the viral song he sung?", [
+        "Tum Hi Ho",
+        "Zara Zara",
+        "Koteshwaraay Shiva Koteshwaraay",
+        "Hanuman Chalisa",
       ]),
     ],
   },

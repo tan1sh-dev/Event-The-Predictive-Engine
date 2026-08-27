@@ -13,8 +13,8 @@ export const CLUE_DURATION_MS = 30_000;
 export const R2_CLUE_DURATION_MS = null;
 /** Host-started clock on each scored question. */
 export const VOTE_DURATION_MS = 90_000;
-/** Round 0 warm-up: shorter projector look-up. */
-export const R0_CLUE_DURATION_MS = 15_000;
+/** Round 0 warm-up: meme video plays to the end — no projector countdown. */
+export const R0_CLUE_DURATION_MS = null;
 /** Round 0 warm-up: shorter phone vote clock. */
 export const R0_VOTE_DURATION_MS = 30_000;
 /** Extra window if Foresight is still waiting when the main clock hits 0. */

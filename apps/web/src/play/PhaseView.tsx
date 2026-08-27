@@ -322,7 +322,7 @@ export default function PhaseView({
           title="Look up the clue"
           body={
             waitingOnVideo
-              ? `The voice note is on the projector. The question and a ${voteSecs}-second clock land here the moment it ends.`
+              ? `The clip is on the projector. The question and a ${voteSecs}-second clock land here the moment it ends.`
               : `Eyes on the projector. The question starts on this phone the moment the clue ends, with a ${voteSecs}-second clock.`
           }
         />

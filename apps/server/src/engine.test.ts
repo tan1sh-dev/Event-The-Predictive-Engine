@@ -484,7 +484,7 @@ describe("clue look-up then 90s vote", () => {
     assert.equal(r0.ok, true);
     assert.equal(engine.step.phase, "clue");
     assert.equal(engine.step.roundId, "R0");
-    assert.equal(engine.msUntilClueDeadline(), 15_000);
+    assert.equal(engine.msUntilClueDeadline(), null);
     assert.equal(engine.playRound("R1").ok, false);
 
     goTo(engine, (s) => s.phase === "weight_update" && s.roundId === "R0");
@@ -526,13 +526,15 @@ describe("clue look-up then 90s vote", () => {
     assert.ok(finalSnap.voteDeadlineAt);
   });
 
-  it("runs a 15s then 30s flow on Round 0 warm-up", () => {
+  it("runs a video-ended then 30s flow on Round 0 warm-up", () => {
     let now = 2_500_000;
     const engine = new GameEngine({ clusterCount: 4, now: () => now });
     engine.setClusterCount(4);
     assert.equal(engine.playRound("R0").ok, true);
-    assert.equal(engine.msUntilClueDeadline(), 15_000);
-    now += 15_000;
+    assert.equal(engine.msUntilClueDeadline(), null);
+    assert.equal(engine.snapshot().clueDeadlineAt, null);
+    now += 14_000;
+    assert.equal(engine.step.phase, "clue");
     assert.equal(engine.expireClue(), true);
     assert.equal(engine.step.phase, "voting_open");
     assert.equal(engine.msUntilVoteDeadline(), 30_000);

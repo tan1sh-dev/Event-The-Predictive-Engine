@@ -900,8 +900,8 @@ export class GameEngine {
 
   /**
    * Called when the projector clue window ends — timer, video `ended`, or host skip.
-   * Opens voting immediately with the phone clock (15s/30s on R0, else 90s).
-   * Untimed clues (Round 2) have no deadline and complete as soon as this is called.
+   * Opens voting immediately with the phone clock (30s on R0, else 90s).
+   * Untimed clues (Round 0 and Round 2 video) have no deadline and complete as soon as this is called.
    */
   expireClue(): boolean {
     if (this.step.phase !== "clue") return false;

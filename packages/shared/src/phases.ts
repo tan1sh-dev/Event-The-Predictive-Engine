@@ -57,7 +57,7 @@ export function roundStartIndex(roundId: RoundId | "FINAL"): number {
 }
 
 export const HOST_PLAY_ROUNDS: { id: HostPlayRoundId; label: string; title: string }[] = [
-  { id: "R0", label: "Play Round 0", title: "Main character energy" },
+  { id: "R0", label: "Play Round 0", title: "Viral clip" },
   { id: "R1", label: "Play Round 1", title: "Their Last Purchases" },
   { id: "R2", label: "Play Round 2", title: "The Vibe Check" },
   { id: "R3", label: "Play Round 3", title: "The Reality Check" },

@@ -4,7 +4,7 @@ Clue assets served at `/media/<filename>` by Vite (dev) and the Express server (
 
 | File | Round | In repo |
 |---|---|---|
-| `r0-lockscreen.png` | R0 — lock screen vibe check | yes |
+| `r0-ravi-kishan.mp4` | R0 — viral clip (Ravi Kishan) | yes |
 | `r1-purchases.png` | R1 — last purchases | yes |
 | `r2-sip.mov` | R2 — SIP video | yes |
 | `r3-search.png` | R3 — 1 A.M. search history | yes |

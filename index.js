@@ -604,21 +604,13 @@ window.addEventListener("keydown", (event) => {
 
 const ROUND_CLUES = {
   R0: {
-    title: "Main character energy",
+    title: "Viral clip",
     body: [
-      "Lock screen · 2:17 AM · 47 unread",
-      "",
-      '• Spotify — "Main Character Era" · playing · 2h 41m',
-      "• Blinkit — Order delivered: Maggi + cold coffee",
-      "• LinkedIn — Someone viewed your profile (it was you)",
-      '• WhatsApp — Mom: "beta call back" (left on read · 6h)',
-      '• Calendar — "Start assignment" · overdue by 4 days',
-      "• Instagram — Your story got 3 views (all from the same person)",
-      '• Notes — "touch grass after midterms (real this time)"',
+      "Watch the clip on the projector.",
       "",
       "Practice round — weights do not carry forward.",
     ].join("\n"),
-    media: { type: "screenshot", src: "/media/r0-lockscreen.png", caption: "Lock screen · 2:17 AM" },
+    media: { type: "video", src: "/media/r0-ravi-kishan.mp4", caption: "Viral clip" },
   },
   R1: {
     title: "Last purchases",
