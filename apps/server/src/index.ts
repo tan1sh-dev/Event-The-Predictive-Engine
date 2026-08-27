@@ -14,7 +14,13 @@ import { restore } from "./snapshot.ts";
 import { attachSockets } from "./sockets.ts";
 
 const PORT = Number(process.env.PORT ?? 3001);
-const PUBLIC_URL = process.env.PUBLIC_URL ?? `http://localhost:${PORT}`;
+const PUBLIC_URL =
+  process.env.PUBLIC_URL ??
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : `http://localhost:${PORT}`);
 
 const engine = new GameEngine({
   joinUrl: `${PUBLIC_URL.replace(/\/$/, "")}/play`,
@@ -60,7 +66,10 @@ app.use(express.static(webDist));
 const server = http.createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(
   server,
-  { cors: { origin: true } },
+  {
+    cors: { origin: true },
+    transports: process.env.VERCEL ? ["websocket"] : ["websocket", "polling"],
+  },
 );
 
 attachSockets(io, engine);
@@ -82,8 +91,12 @@ app.use((req, res, next) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Predictive Engine server on ${PUBLIC_URL}`);
-  console.log(`  projector static: ${PUBLIC_URL}/stage-static/index.html`);
-  console.log(`  socket.io path:   /socket.io`);
-});
+if (!process.env.VERCEL) {
+  server.listen(PORT, () => {
+    console.log(`Predictive Engine server on ${PUBLIC_URL}`);
+    console.log(`  projector static: ${PUBLIC_URL}/stage-static/index.html`);
+    console.log(`  socket.io path:   /socket.io`);
+  });
+}
+
+export default server;

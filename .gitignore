@@ -3,7 +3,11 @@ node_modules
 
 # build output
 dist
+public
 *.tsbuildinfo
+
+# Vercel
+.vercel
 
 # local env / secrets
 .env

@@ -31,7 +31,10 @@ export function useEngineSocket(): GameSocket {
   const socket = useMemo(
     () =>
       io({
-        transports: ["websocket", "polling"],
+        transports:
+          typeof window !== "undefined" && /\.vercel\.app$/i.test(window.location.hostname)
+            ? ["websocket"]
+            : ["websocket", "polling"],
         autoConnect: true,
       }),
     [],

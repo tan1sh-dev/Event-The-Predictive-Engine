@@ -3,9 +3,9 @@ import path from "node:path";
 import type { GameEngine } from "./engine.ts";
 
 export function snapshotPath(): string {
-  return process.env.SNAPSHOT_PATH
-    ? path.resolve(process.env.SNAPSHOT_PATH)
-    : path.resolve(process.cwd(), "data/state.json");
+  if (process.env.SNAPSHOT_PATH) return path.resolve(process.env.SNAPSHOT_PATH);
+  if (process.env.VERCEL) return path.join("/tmp", "engine-state.json");
+  return path.resolve(process.cwd(), "data/state.json");
 }
 
 export async function persist(engine: GameEngine): Promise<void> {

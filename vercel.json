@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "express",
+  "fluid": true,
+  "installCommand": "npm ci --include=dev",
+  "buildCommand": "npm run build -w @engine/web && node scripts/prepare-vercel-public.mjs",
+  "regions": ["sin1"],
+  "functions": {
+    "app.ts": {
+      "maxDuration": 800
+    }
+  },
+  "rewrites": [
+    { "source": "/play", "destination": "/index.html" },
+    { "source": "/play/:path*", "destination": "/index.html" },
+    { "source": "/host", "destination": "/index.html" },
+    { "source": "/host/:path*", "destination": "/index.html" },
+    { "source": "/stage", "destination": "/index.html" },
+    { "source": "/stage/:path*", "destination": "/index.html" }
+  ]
+}

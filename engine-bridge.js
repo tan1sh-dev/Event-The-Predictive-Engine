@@ -30,7 +30,10 @@ function connectWhenReady() {
     return;
   }
 
-  const socket = io(engineUrl(), { transports: ["websocket", "polling"] });
+  const onVercel = /\.vercel\.app$/i.test(window.location.hostname);
+  const socket = io(engineUrl(), {
+    transports: onVercel ? ["websocket"] : ["websocket", "polling"],
+  });
   window.__notifyClueEnded = function notifyClueEnded() {
     if (!socket.connected) return;
     socket.emit("stageClueEnded");
