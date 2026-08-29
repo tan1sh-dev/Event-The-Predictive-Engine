@@ -88,6 +88,10 @@ export const ROUNDS: RoundConfig[] = [
           "The recurring purchases look like discipline, but nothing proves they're actually keeping up the routine day to day.",
           "Spending is balanced enough across categories that no single habit really stands out.",
         ],
+        {
+          explanation:
+            "The gym membership and skincare purchases are renewals, showing proof of a real routine. The late-night food orders show that the student still occasionally leans on convenience while being disciplined.",
+        },
       ),
     ],
   },
@@ -120,6 +124,10 @@ export const ROUNDS: RoundConfig[] = [
           "The person who searches for workable approaches when the team is stuck and needs a result quickly.",
           "The person who understands the solution well enough to modify it when the requirements suddenly change.",
         ],
+        {
+          explanation:
+            "Because the voice note shows they are good at quickly finding a workable solution when they're stuck, even without fully understanding it.",
+        },
       ),
     ],
   },
@@ -157,6 +165,10 @@ export const ROUNDS: RoundConfig[] = [
           "Remove the playlist search",
           "Remove the Domino's search",
         ],
+        {
+          explanation:
+            "Because the Domino's search mainly tells us about a one-time food preference/convenience choice, while the other searches give us more information about the student's technical interests, study habits, productivity, or lifestyle.",
+        },
       ),
       q(
         "R3",
@@ -168,6 +180,10 @@ export const ROUNDS: RoundConfig[] = [
           "Grinds hard when it counts, but still finds small ways to make it comfortable or fun.",
           "Takes the path of least resistance — picks convenience over effort whenever possible.",
         ],
+        {
+          explanation:
+            "Because they balance serious work with comfort and convenience, instead of focusing only on one side.",
+        },
       ),
     ],
   },
@@ -193,7 +209,10 @@ export const ROUNDS: RoundConfig[] = [
         "Fact 2 is the lie",
         "Fact 3 is the lie",
         "None of them are lies",
-      ]),
+      ], {
+        explanation:
+          "Fact 3 is the lie, because it directly contradicts the search history we analyzed in Round 3, where they explicitly looked for the \"best playlist for pretending I'm productive\".",
+      }),
       q(
         "R4",
         2,
@@ -204,6 +223,10 @@ export const ROUNDS: RoundConfig[] = [
           "Lying here fakes an unshakeable attention span — zero distractions, ever.",
           "Simplest lie to pick since no one can actually verify someone's study environment.",
         ],
+        {
+          explanation:
+            "Their history of prioritizing gym routines and premium skincare proves they care deeply about projecting a flawless, high-achieving image to the outside world. Admitting they actually need study playlists and a curated \"vibe\" to function ruins that illusion, so they lie to sound like a gritty, highly disciplined engineering student.",
+        },
       ),
     ],
   },
@@ -242,6 +265,10 @@ export const ROUNDS: RoundConfig[] = [
           "70% funding anxiety, 30% quietly realizing they can't code their way out.",
           "100% coding — the deck's just there to look busy while the fix loads.",
         ],
+        {
+          explanation:
+            "Valuation slide + Shark Tank search show the funding fantasy is running loud. But a fatal DB crash sitting untouched means the panic isn't \"let me fix this,\" it's \"oh no, I don't know how.\"",
+        },
       ),
       q(
         "R5",
@@ -253,6 +280,10 @@ export const ROUNDS: RoundConfig[] = [
           "The Chaotic Explorer — no strategy, just chasing whatever's loud that hour.",
           "The Curated Grinder — real effort, real struggle, but only the polished parts go on display.",
         ],
+        {
+          explanation:
+            "Same person from R3/R4: grinds hard, but manages the optics (playlist for the vibe of productivity, Canva decks over debugging). The backstage is on fire; the front stage is a ₹10 Cr pitch.",
+        },
       ),
     ],
   },

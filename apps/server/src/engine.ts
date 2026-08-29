@@ -47,6 +47,14 @@ export function newToken(): string {
   return randomBytes(16).toString("hex");
 }
 
+/** Phones must not see the keyed rationale until the host has marked the answer. */
+function publicQuestion(question: Question | null, revealed: boolean): Question | null {
+  if (!question) return null;
+  if (revealed || !question.explanation) return question;
+  const { explanation: _hidden, ...rest } = question;
+  return rest;
+}
+
 export function applyAdaBoost(
   weight: number,
   alpha: number,
@@ -1196,7 +1204,13 @@ export class GameEngine {
         step.phase === "final_inference_locked" ||
         step.phase === "ensemble" ||
         step.phase === "final_reveal"
-          ? question
+          ? publicQuestion(
+              question,
+              Boolean(correct) &&
+                (step.phase === "reveal" ||
+                  step.phase === "final_reveal" ||
+                  step.phase === "ensemble"),
+            )
           : null,
       clue,
       roundTitle: step.roundId === "FINAL" ? "Final testing" : round?.title ?? null,

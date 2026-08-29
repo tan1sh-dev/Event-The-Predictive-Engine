@@ -351,6 +351,26 @@ describe("voting + AdaBoost round", () => {
     assert.equal(result?.correct, false);
   });
 
+  it("withholds the answer explanation until the host reveals", () => {
+    const engine = new GameEngine({ clusterCount: 4 });
+    engine.joinCluster(1, undefined, "s1");
+    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R1");
+    assert.ok(engine.getCurrentQuestion()?.explanation);
+    assert.equal(engine.snapshot().question?.explanation, undefined);
+
+    engine.submitVote(1, "r1-q1", "b", 0.5);
+    engine.advance();
+    engine.advance();
+    assert.equal(engine.snapshot().phase, "reveal");
+    assert.equal(engine.snapshot().question?.explanation, undefined);
+
+    const revealed = engine.reveal("b");
+    assert.equal(revealed.ok, true);
+    const text = engine.snapshot().question?.explanation;
+    assert.equal(typeof text, "string");
+    assert.ok(text && text.includes("gym membership and skincare"));
+  });
+
   it("starts a 90s clock on scored questions and locks when it expires", () => {
     let now = 1_000_000;
     const engine = new GameEngine({ clusterCount: 4, now: () => now });

@@ -509,6 +509,14 @@ export default function PhaseView({
             </span>
             {optionLine(question, snapshot.correctOptionId)}
           </p>
+          {question?.explanation ? (
+            <p className="rounded-2xl bg-black/25 px-4 py-3 text-left text-[15px] leading-relaxed text-cream/80 ring-1 ring-white/10">
+              <span className="mb-1.5 block text-center text-[11px] font-bold uppercase tracking-[0.22em] text-cream/40">
+                Why
+              </span>
+              {question.explanation}
+            </p>
+          ) : null}
         </div>
         {scored.powerApplied ? (
           <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.22em] text-cream/50">

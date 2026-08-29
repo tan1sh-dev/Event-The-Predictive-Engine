@@ -105,6 +105,8 @@ export interface Question {
   index: 1 | 2;
   prompt: string;
   hint?: string;
+  /** Why the keyed answer is correct. Sent to phones only after the host reveals. */
+  explanation?: string;
   media?: MediaAsset;
   options: QuestionOption[];
   wagerRequired: boolean;
