@@ -7,6 +7,8 @@ export const LOW_WAGER = 0.5;
 export const HIGH_WAGER = 1.5;
 export const MID_WAGER = 1;
 export const WAGER_STEP = 0.1;
+/** Amplify locks α here on Round 4 Q1 — outside the 0.5–1.5 slider. */
+export const AMPLIFY_WAGER = 2;
 /** Projector-only look-up before the question lands on phones. */
 export const CLUE_DURATION_MS = 30_000;
 /** Round 2 plays the SIP video to the end — no projector countdown. */

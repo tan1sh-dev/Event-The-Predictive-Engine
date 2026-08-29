@@ -715,30 +715,51 @@ describe("power-ups", () => {
     assert.equal(engine.snapshot().powerGrantDeadlineAt, null);
   });
 
-  it("Insurance zeroes a miss and Amplify doubles alpha only on Round 4 question 1", () => {
+  it("Insurance zeroes a miss and Amplify locks alpha at 2.0 on Round 4 question 1", () => {
     const engine = new GameEngine({ clusterCount: 20 });
     goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R4" && s.questionIndex === 1);
     engine.setWeight(1, 2);
     engine.setWeight(2, 2);
+    engine.setWeight(3, 2);
     engine.grantPowers([
       { clusterNumber: 1, power: "insurance" },
       { clusterNumber: 2, power: "amplify" },
+      { clusterNumber: 3, power: "amplify" },
     ]);
     playQuestion(
       engine,
       [
         { cluster: 1, option: "a", wager: 1.5 },
         { cluster: 2, option: "b", wager: 0.5 },
+        { cluster: 3, option: "a", wager: 1.5 },
       ],
       "b",
     );
     goTo(engine, (s) => s.phase === "weight_update" && s.roundId === "R4");
     // cluster 1: wrong with insurance → no change
     assert.ok(Math.abs(engine.getCluster(1)!.weight - 2) < 1e-9);
-    // cluster 2: correct with amplify α=1.0 → 2 * exp(1)
-    assert.ok(Math.abs(engine.getCluster(2)!.weight - 2 * Math.exp(1)) < 1e-9);
+    // cluster 2: correct with amplify α=2.0, y=+1 → 2 * exp(2)
+    assert.ok(Math.abs(engine.getCluster(2)!.weight - 2 * Math.exp(2)) < 1e-9);
+    // cluster 3: wrong with amplify α=2.0, y=-1 → 2 * exp(-2)
+    assert.ok(Math.abs(engine.getCluster(3)!.weight - 2 * Math.exp(-2)) < 1e-9);
     assert.equal(engine.getCluster(1)!.power?.used, true);
     assert.equal(engine.getCluster(2)!.power?.used, true);
+    assert.equal(engine.getCluster(3)!.power?.used, true);
+  });
+
+  it("Amplify overwrites any submitted wager to 2.0 on Round 4 question 1", () => {
+    const engine = new GameEngine({ clusterCount: 4 });
+    engine.joinCluster(1, undefined, "s1");
+    engine.joinCluster(2, undefined, "s2");
+    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R4" && s.questionIndex === 1);
+    engine.grantPowers([{ clusterNumber: 1, power: "amplify" }]);
+    const q = engine.getCurrentQuestion()!;
+    const ignored = engine.submitVote(1, q.id, "a", null);
+    assert.equal(ignored.ok, true);
+    assert.equal(engine.getCluster(1)?.pendingVote?.wager, 2);
+    const noWager = engine.submitVote(2, q.id, "b", 0.5);
+    assert.equal(noWager.ok, true);
+    assert.equal(engine.getCluster(2)?.pendingVote?.wager, 0.5);
   });
 
   it("does not let Insurance or Amplify apply on Round 4 question 2", () => {
@@ -768,10 +789,10 @@ describe("power-ups", () => {
     engine.advance();
     engine.reveal("b");
     goTo(engine, (s) => s.phase === "weight_update" && s.roundId === "R4");
-    // Q1: cluster 1 hit (no insurance), cluster 2 miss (no amplify)
+    // Q1: cluster 1 hit (no insurance), cluster 2 miss with amplify α=2.0
     // Q2: cluster 1 miss α=1, cluster 2 hit α=0.5 — leftover powers already burned
     const c1After = 2 * Math.exp(1) * Math.exp(-1);
-    const c2After = 2 * Math.exp(-0.5) * Math.exp(0.5);
+    const c2After = 2 * Math.exp(-2) * Math.exp(0.5);
     assert.ok(Math.abs(engine.getCluster(1)!.weight - c1After) < 1e-9);
     assert.ok(Math.abs(engine.getCluster(2)!.weight - c2After) < 1e-9);
     assert.ok(Math.abs((engine.getCluster(1)!.roundWeightBefore ?? 0) - 2) < 1e-9);

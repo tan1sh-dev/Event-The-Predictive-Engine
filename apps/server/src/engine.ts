@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
+  AMPLIFY_WAGER,
   CLUSTER_COUNT,
   ENSEMBLE_CALCULATING_MS,
   FINAL_CLUE,
@@ -421,7 +422,8 @@ export class GameEngine {
         message: "The final inference has no wager.",
       };
     }
-    const alpha = final ? null : normalizeWager(wager);
+    const amplifyLocked = !final && this.amplifyLocksWager(cluster);
+    const alpha = final ? null : amplifyLocked ? AMPLIFY_WAGER : normalizeWager(wager);
     if (!final && alpha == null) {
       return {
         ok: false,
@@ -442,6 +444,14 @@ export class GameEngine {
 
   private isPowerQuestionStep(step: PhaseStep = this.step): boolean {
     return isPowerQuestion(step.roundId, step.questionIndex ?? null);
+  }
+
+  private amplifyLocksWager(cluster: ClusterRecord): boolean {
+    return (
+      this.isPowerQuestionStep() &&
+      cluster.power?.type === "amplify" &&
+      !cluster.power.used
+    );
   }
 
   private hasUnusedForesight(cluster: ClusterRecord): boolean {
@@ -657,11 +667,16 @@ export class GameEngine {
       const voted = this.voteForQuestion(cluster.pendingVote, question);
       const correct = voted ? voted.optionId === correctOptionId : false;
       const y: 1 | -1 = correct ? 1 : -1;
-      const alpha = voted ? (voted.wager ?? 0.5) : NO_VOTE_ALPHA;
+      const amplifyLocked =
+        question.id === POWER_QUESTION_ID &&
+        Boolean(voted) &&
+        cluster.power?.type === "amplify" &&
+        !cluster.power.used;
+      const alpha = !voted ? NO_VOTE_ALPHA : amplifyLocked ? AMPLIFY_WAGER : (voted.wager ?? 0.5);
       const result: QuestionResult = {
         questionId: question.id,
         optionId: voted?.optionId ?? "",
-        wager: voted?.wager ?? null,
+        wager: voted ? (amplifyLocked ? AMPLIFY_WAGER : voted.wager) : null,
         correct,
         y,
         alpha,
@@ -775,11 +790,10 @@ export class GameEngine {
     } else if (
       onPowerQuestion &&
       !abstained &&
-      result.correct &&
       cluster.power?.type === "amplify" &&
       !cluster.power.used
     ) {
-      alpha = alpha * 2;
+      alpha = AMPLIFY_WAGER;
       powerApplied = "amplify";
       cluster.power.used = true;
     }

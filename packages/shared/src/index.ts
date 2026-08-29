@@ -44,6 +44,7 @@ export type {
 } from "./types.ts";
 
 export {
+  AMPLIFY_WAGER,
   CLUSTER_COUNT,
   CLUE_DURATION_MS,
   ENSEMBLE_CALCULATING_MS,

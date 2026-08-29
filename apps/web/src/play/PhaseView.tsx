@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  AMPLIFY_WAGER,
   FORESIGHT_GRACE_MS,
   MID_WAGER,
   POWER_GRANT_DURATION_MS,
@@ -46,7 +47,7 @@ const POWERS: { id: PowerUp; title: string; body: string; variant: "mint" | "gol
     {
       id: "amplify",
       title: "Amplify",
-      body: "On Round 4 Q1, a hit doubles α. You still vote with everyone else.",
+      body: "On Round 4 Q1, α locks at 2.0 — you cannot change it. Hit is y = +1, miss is y = −1. You still vote with everyone else.",
       variant: "danger",
     },
     {
@@ -119,6 +120,7 @@ function VoteForm({
   split,
   expired,
   canLock = true,
+  fixedWager = null,
   onVote,
 }: {
   question: Question;
@@ -128,36 +130,43 @@ function VoteForm({
   split: VoteSplitEntry[] | null;
   expired: boolean;
   canLock?: boolean;
+  fixedWager?: Wager | null;
   onVote: (optionId: string, wager: Wager | null, onAck?: (ok: boolean) => void) => void;
 }) {
   const [option, setOption] = useState<string | null>(pendingOption);
-  const [wager, setWager] = useState<Wager>(pendingWager ?? MID_WAGER);
+  const [wager, setWager] = useState<Wager>(pendingWager ?? fixedWager ?? MID_WAGER);
   const [lockedIn, setLockedIn] = useState(Boolean(pendingOption));
 
   useEffect(() => {
     setOption(pendingOption);
-    setWager(pendingWager ?? MID_WAGER);
+    setWager(pendingWager ?? fixedWager ?? MID_WAGER);
     setLockedIn(Boolean(pendingOption));
-  }, [question.id]);
+  }, [question.id, fixedWager]);
 
   useEffect(() => {
     if (!pendingOption) return;
     setOption(pendingOption);
-    setWager(pendingWager ?? MID_WAGER);
+    setWager(pendingWager ?? fixedWager ?? MID_WAGER);
     setLockedIn(true);
-  }, [pendingOption, pendingWager]);
+  }, [pendingOption, pendingWager, fixedWager]);
 
-  const ready = Boolean(option) && (!wagerRequired || normalizeWager(wager) != null);
+  const displayWager = fixedWager ?? wager;
+  const ready =
+    Boolean(option) && (!wagerRequired || fixedWager != null || normalizeWager(wager) != null);
   const frozen = lockedIn || expired;
 
   const lockIn = () => {
     if (frozen || !canLock) return;
     if (!option) return;
-    if (wagerRequired && wager == null) return;
+    if (wagerRequired && fixedWager == null && wager == null) return;
     setLockedIn(true);
-    onVote(option, wagerRequired ? (normalizeWager(wager) ?? wager) : null, (ok) => {
-      if (!ok) setLockedIn(false);
-    });
+    onVote(
+      option,
+      wagerRequired ? (fixedWager ?? normalizeWager(wager) ?? wager) : null,
+      (ok) => {
+        if (!ok) setLockedIn(false);
+      },
+    );
   };
 
   return (
@@ -203,12 +212,25 @@ function VoteForm({
             Confidence wager
           </p>
           <p className="font-display text-center text-4xl font-bold tabular-nums">
-            α {wager.toFixed(1)}
+            α {displayWager.toFixed(1)}
           </p>
           <p className="mt-1 text-center text-[11px] font-bold uppercase tracking-widest text-cream/50">
-            {wager <= 0.7 ? "Low risk" : wager >= 1.3 ? "High risk" : "Mid risk"}
+            {fixedWager != null
+              ? "Locked by Amplify"
+              : wager <= 0.7
+                ? "Low risk"
+                : wager >= 1.3
+                  ? "High risk"
+                  : "Mid risk"}
           </p>
-          <WagerArc value={wager} onChange={setWager} disabled={frozen} />
+          {fixedWager == null ? (
+            <WagerArc value={wager} onChange={setWager} disabled={frozen} />
+          ) : (
+            <p className="mt-3 text-center text-sm text-cream/55">
+              Amplify fixed this at {fixedWager.toFixed(1)}. Pick an answer — that’s the only
+              lever you have.
+            </p>
+          )}
         </div>
       )}
 
@@ -224,7 +246,7 @@ function VoteForm({
       )}
       {canLock && !ready && (
         <p className="text-center text-[11px] text-cream/40">
-          {wagerRequired
+          {wagerRequired && fixedWager == null
             ? "Pick an option, set α from 0.5 to 1.5, then lock in."
             : "Pick an option, then lock in."}
         </p>
@@ -372,7 +394,7 @@ export default function PhaseView({
           <p className="mb-3 rounded-2xl bg-white/6 px-4 py-2 text-center text-sm text-cream/70 ring-1 ring-white/10">
             {armed === "insurance"
               ? "Insurance is armed — a miss on this question won’t cut your weight."
-              : "Amplify is armed — a hit on this question doubles α."}
+              : `Amplify is armed — your α is locked at ${AMPLIFY_WAGER.toFixed(1)}. Hit: y = +1. Miss: y = −1.`}
           </p>
         )}
         <VoteForm
@@ -395,6 +417,7 @@ export default function PhaseView({
           split={grace ? view.crowdSplit : null}
           expired={expired}
           canLock={!waiting}
+          fixedWager={armed === "amplify" ? AMPLIFY_WAGER : null}
           onVote={onVote}
         />
       </div>
@@ -546,7 +569,7 @@ export default function PhaseView({
       <WaitCard
         kicker="Mic moment"
         title="Two clusters, one archetype."
-        body='No scoring. Host asks: "Which archetype is your cluster leaning toward right now — and why?" If they call your cluster, send one of you up — the rest hold the phone.'
+        body="No scoring. Teams answer why they chose what they chose in Round 2. If they call your cluster, send one of you up — the rest hold the phone."
       />
     );
   }
@@ -565,9 +588,9 @@ export default function PhaseView({
           )}
           <h2 className="font-display text-center text-3xl font-bold">You made it to top 3.</h2>
           <p className="mb-2 text-center text-sm text-cream/65">
-            Pick one boost for Round 4 question 1. Insurance and Amplify change your weight.
-            Foresight lets you see the question with everyone, then vote after the clock with the
-            crowd split.
+            Pick one boost for Round 4 question 1. Insurance can zero a miss. Amplify locks α at
+            2.0. Foresight lets you see the question with everyone, then vote after the clock with
+            the crowd split.
           </p>
           {POWERS.map((p) => (
             <Pressable
