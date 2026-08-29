@@ -533,6 +533,7 @@ describe("clue look-up then 90s vote", () => {
     assert.equal(engine.playRound("R0").ok, true);
     assert.equal(engine.msUntilClueDeadline(), null);
     assert.equal(engine.snapshot().clueDeadlineAt, null);
+    assert.equal(engine.snapshot().clue?.media?.autoplay, false);
     now += 14_000;
     assert.equal(engine.step.phase, "clue");
     assert.equal(engine.expireClue(), true);
@@ -544,7 +545,7 @@ describe("clue look-up then 90s vote", () => {
     let now = 3_000_000;
     const engine = new GameEngine({ clusterCount: 4, now: () => now });
     engine.setClusterCount(4);
-    for (const roundId of ["R1", "R3", "R4", "R5"] as const) {
+    for (const roundId of ["R1", "R3", "R4"] as const) {
       unlockPlayRound(engine, roundId);
       const started = engine.playRound(roundId);
       assert.equal(started.ok, true, `play ${roundId}`);
@@ -606,6 +607,7 @@ describe("clue look-up then 90s vote", () => {
     assert.equal(clueSnap.phase, "clue");
     assert.equal(clueSnap.roundId, "R2");
     assert.equal(clueSnap.question, null);
+    assert.equal(clueSnap.clue?.media?.autoplay, false);
     assert.equal(clueSnap.clueDeadlineAt, null);
     assert.equal(engine.msUntilClueDeadline(), null);
     assert.ok(clueSnap.clueStartedAt);
@@ -616,6 +618,34 @@ describe("clue look-up then 90s vote", () => {
     assert.equal(engine.step.phase, "voting_open");
     const voteSnap = engine.snapshot();
     assert.ok(voteSnap.question);
+    assert.equal(voteSnap.clue, null);
+    assert.equal(voteSnap.voteDeadlineAt, now + 90_000);
+    assert.equal(voteSnap.clueDeadlineAt, null);
+  });
+
+  it("opens Round 5 with no clue clock and starts the vote when the video ends", () => {
+    let now = 4_500_000;
+    const engine = new GameEngine({ clusterCount: 4, now: () => now });
+    engine.setClusterCount(4);
+    unlockPlayRound(engine, "R5");
+    assert.equal(engine.playRound("R5").ok, true);
+    const clueSnap = engine.snapshot();
+    assert.equal(clueSnap.phase, "clue");
+    assert.equal(clueSnap.roundId, "R5");
+    assert.equal(clueSnap.question, null);
+    assert.equal(clueSnap.clue?.media?.type, "video");
+    assert.equal(clueSnap.clue?.media?.autoplay, false);
+    assert.equal(clueSnap.clueDeadlineAt, null);
+    assert.equal(engine.msUntilClueDeadline(), null);
+    assert.ok(clueSnap.clueStartedAt);
+
+    now += 180_000;
+    assert.equal(engine.step.phase, "clue");
+    assert.equal(engine.expireClue(), true);
+    assert.equal(engine.step.phase, "voting_open");
+    const voteSnap = engine.snapshot();
+    assert.ok(voteSnap.question);
+    assert.equal(voteSnap.question?.id, "r5-q1");
     assert.equal(voteSnap.clue, null);
     assert.equal(voteSnap.voteDeadlineAt, now + 90_000);
     assert.equal(voteSnap.clueDeadlineAt, null);

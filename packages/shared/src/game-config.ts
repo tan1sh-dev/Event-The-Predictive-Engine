@@ -38,6 +38,7 @@ export const ROUNDS: RoundConfig[] = [
         type: "video",
         src: "/media/r0-ravi-kishan.mp4",
         caption: "Viral clip",
+        autoplay: false,
       },
     },
     questions: [
@@ -106,7 +107,7 @@ export const ROUNDS: RoundConfig[] = [
         "",
         'Volunteer: "Dude I honestly have zero clue how the code works, but it showed \'Output: Success\' once on my screen, so I\'m submitting it right now and going to sleep."',
       ].join("\n"),
-      media: { type: "video", src: "/media/r2-sip.mov", caption: "SIP video · 1:30 AM" },
+      media: { type: "video", src: "/media/r2-sip.mov", caption: "SIP video · 1:30 AM", autoplay: false },
     },
     questions: [
       q(
@@ -214,9 +215,9 @@ export const ROUNDS: RoundConfig[] = [
     clue: {
       title: "Open tabs",
       body: [
-        "A projected screenshot of their browser window:",
+        "Watch the screen recording on the projector. Click to play — it will not start on its own.",
         "",
-        'Tab 1 — The Big Pitch: A polished Canva presentation titled "PhysioTracker AI – Pitch Deck (Final Draft)" with sleek mockups and a projected ₹10 crore valuation slide.',
+        "Tab 1 — The Big Pitch: A polished Canva presentation titled \"PhysioTracker AI – Pitch Deck (Final Draft)\" with sleek mockups and a projected ₹10 crore valuation slide.",
         "",
         'Tab 2 — The High Hopes: A Google search for "how to apply for Shark Tank India as a college student".',
         "",
@@ -224,9 +225,10 @@ export const ROUNDS: RoundConfig[] = [
         "FATAL ERROR: Server crashed. Database connection failed.",
       ].join("\n"),
       media: {
-        type: "screenshot",
-        src: "/media/r5-tabs.png",
-        caption: "Pitch deck vs crashing server",
+        type: "video",
+        src: "/media/r5-tabs.mp4",
+        caption: "Screen recording · pitch deck vs crashing server",
+        autoplay: false,
       },
     },
     questions: [

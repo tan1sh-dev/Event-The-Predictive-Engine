@@ -610,7 +610,7 @@ const ROUND_CLUES = {
       "",
       "Practice round — weights do not carry forward.",
     ].join("\n"),
-    media: { type: "video", src: "/media/r0-ravi-kishan.mp4", caption: "Viral clip" },
+    media: { type: "video", src: "/media/r0-ravi-kishan.mp4", caption: "Viral clip", autoplay: false },
   },
   R1: {
     title: "Last purchases",
@@ -639,7 +639,7 @@ const ROUND_CLUES = {
       "",
       'Volunteer: "Dude I honestly have zero clue how the code works, but it showed \'Output: Success\' once on my screen, so I\'m submitting it right now and going to sleep."',
     ].join("\n"),
-    media: { type: "video", src: "/media/r2-sip.mov", caption: "SIP video · 1:30 AM" },
+    media: { type: "video", src: "/media/r2-sip.mov", caption: "SIP video · 1:30 AM", autoplay: false },
   },
   R3: {
     title: "Search history",
@@ -669,7 +669,7 @@ const ROUND_CLUES = {
   R5: {
     title: "Open tabs",
     body: [
-      "A projected screenshot of their browser window:",
+      "Watch the screen recording on the projector. Click to play — it will not start on its own.",
       "",
       'Tab 1 — The Big Pitch: A polished Canva presentation titled "PhysioTracker AI – Pitch Deck (Final Draft)" with sleek mockups and a projected ₹10 crore valuation slide.',
       "",
@@ -678,7 +678,12 @@ const ROUND_CLUES = {
       "Tab 3 — The Broken Reality: An active VS Code / terminal screen filled with red error text:",
       "FATAL ERROR: Server crashed. Database connection failed.",
     ].join("\n"),
-    media: { type: "screenshot", src: "/media/r5-tabs.png", caption: "Pitch deck vs crashing server" },
+    media: {
+      type: "video",
+      src: "/media/r5-tabs.mp4",
+      caption: "Screen recording · pitch deck vs crashing server",
+      autoplay: false,
+    },
   },
   FINAL: {
     title: "Latent space",
@@ -809,23 +814,37 @@ function bindClueHolderClicks(holder) {
   holder.dataset.soundBound = "1";
   holder.addEventListener("click", () => {
     const media = holder.querySelector("video, audio");
-    if (media) enableSound(media);
+    if (!media || media.autoplay === false) return;
+    enableSound(media);
   });
 }
 
-function bindCluePlayback(el) {
+function bindCluePlayback(el, { autoplay = true } = {}) {
   el.playsInline = true;
   el.setAttribute("playsinline", "");
   el.setAttribute("webkit-playsinline", "");
-  el.autoplay = true;
   el.preload = "auto";
   el.volume = 1;
-  setMediaMuted(el, true);
   el.addEventListener("ended", notifyClueEnded);
+  el.addEventListener("play", () => {
+    if (!el.muted) hideClueGate();
+  });
   el.addEventListener("error", () => {
     el.parentElement && (el.parentElement.innerHTML = "");
   });
 
+  if (!autoplay) {
+    el.autoplay = false;
+    el.removeAttribute("autoplay");
+    el.controls = true;
+    el.setAttribute("controls", "");
+    setMediaMuted(el, false);
+    hideClueGate();
+    return;
+  }
+
+  el.autoplay = true;
+  setMediaMuted(el, true);
   const start = () => {
     if (el.dataset.clueStarted === "1") return;
     el.dataset.clueStarted = "1";
@@ -870,9 +889,13 @@ function renderClueMedia(media) {
     return;
   }
   if (media.type === "video") {
-    holder.innerHTML = `<video muted playsinline autoplay preload="auto" src="${media.src}"></video>`;
+    const autoplay = media.autoplay !== false;
+    const attrs = autoplay
+      ? "muted playsinline autoplay preload=\"auto\""
+      : "playsinline preload=\"auto\" controls";
+    holder.innerHTML = `<video ${attrs} src="${media.src}"></video>`;
     const video = holder.querySelector("video");
-    if (video) bindCluePlayback(video);
+    if (video) bindCluePlayback(video, { autoplay });
     return;
   }
   holder.innerHTML = `<img src="${media.src}" alt="" />`;

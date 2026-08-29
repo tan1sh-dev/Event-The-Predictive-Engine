@@ -11,6 +11,8 @@ export const WAGER_STEP = 0.1;
 export const CLUE_DURATION_MS = 30_000;
 /** Round 2 plays the SIP video to the end — no projector countdown. */
 export const R2_CLUE_DURATION_MS = null;
+/** Round 5 plays the tab screen-recording to the end — no projector countdown. */
+export const R5_CLUE_DURATION_MS = null;
 /** Host-started clock on each scored question. */
 export const VOTE_DURATION_MS = 90_000;
 /** Round 0 warm-up: meme video plays to the end — no projector countdown. */
@@ -43,8 +45,10 @@ export function isPowerQuestion(
 }
 
 export function clueDurationForRound(roundId: RoundId | "FINAL" | null | undefined): number | null {
+  if (roundId === "R0") return R0_CLUE_DURATION_MS;
   if (roundId === "R2") return R2_CLUE_DURATION_MS;
-  return roundId === "R0" ? R0_CLUE_DURATION_MS : CLUE_DURATION_MS;
+  if (roundId === "R5") return R5_CLUE_DURATION_MS;
+  return CLUE_DURATION_MS;
 }
 
 export function voteDurationForRound(roundId: RoundId | "FINAL" | null | undefined): number {
@@ -86,6 +90,8 @@ export interface MediaAsset {
   type: MediaType;
   src: string;
   caption?: string;
+  /** Projector videos default to muted autoplay. Set false to sit paused with sound on and native controls. */
+  autoplay?: boolean;
 }
 
 export interface QuestionOption {
@@ -379,7 +385,7 @@ export interface ClientToServerEvents {
   hostAdvance: (cb: (res: HostAck) => void) => void;
   hostBack: (cb: (res: HostAck) => void) => void;
   hostPlayRound: (payload: HostPlayRoundPayload, cb: (res: HostAck) => void) => void;
-  /** Projector: untimed clue media finished (Round 2 video). Opens the phone question. */
+  /** Projector: untimed clue media finished (R0 / R2 / R5 video). Opens the phone question. */
   stageClueEnded: (cb?: (res: { ok: boolean }) => void) => void;
   hostReveal: (payload: HostRevealPayload, cb: (res: HostAck) => void) => void;
   hostGrantPowers: (payload: HostGrantPowersPayload, cb: (res: HostAck) => void) => void;
