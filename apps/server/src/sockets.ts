@@ -144,12 +144,6 @@ export function attachSockets(io: Io, engine: GameEngine): void {
 
   const broadcast = () => {
     const snap = engine.snapshot();
-    io.emit("snapshot", snap);
-    io.emit("voteProgress", {
-      lockedCount: snap.lockedCount,
-      connectedCount: snap.connectedCount,
-      clusterCount: snap.clusterCount,
-    });
     for (let n = 1; n <= engine.clusterCount; n++) {
       const view = engine.clusterView(n, snap);
       const record = engine.getCluster(n);
@@ -157,6 +151,12 @@ export function attachSockets(io: Io, engine: GameEngine): void {
         io.to(record.socketId).emit("clusterView", view);
       }
     }
+    io.emit("snapshot", snap);
+    io.emit("voteProgress", {
+      lockedCount: snap.lockedCount,
+      connectedCount: snap.connectedCount,
+      clusterCount: snap.clusterCount,
+    });
     armVoteTimer();
     armClueTimer();
     armPowerGrantTimer();
@@ -316,6 +316,9 @@ export function attachSockets(io: Io, engine: GameEngine): void {
       if (denied) {
         cb(denied);
         return;
+      }
+      if (engine.step.phase === "voting_locked") {
+        engine.advance();
       }
       const correct =
         payload.correctOptionId ||

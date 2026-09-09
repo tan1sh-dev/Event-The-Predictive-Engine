@@ -95,7 +95,16 @@ export function useClusterSession(socket: GameSocket) {
       setView((prev) => {
         if (!prev) return prev;
         if (prev.clusterNumber > snapshot.clusterCount) return null;
-        return { ...prev, snapshot };
+        const foresightWaiting =
+          prev.power?.type === "foresight" &&
+          !prev.power.used &&
+          snapshot.phase === "voting_open" &&
+          !snapshot.foresightGraceActive;
+        return {
+          ...prev,
+          snapshot,
+          foresightWaiting,
+        };
       });
     };
     const onReveal = (payload: {

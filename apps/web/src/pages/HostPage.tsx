@@ -257,6 +257,14 @@ export default function HostPage() {
       return "Mark answer first";
     }
     if (snap.phase === "clue") return "Skip to question";
+    if (
+      snap.phase === "voting_open" &&
+      !snap.foresightGraceActive &&
+      snap.foresightWaitingCount > 0
+    ) {
+      return "Start Foresight extra";
+    }
+    if (snap.foresightGraceActive) return "Lock question";
     if (snap.phase === "final_inference_open") return "Skip to calculating";
     if (snap.phase === "final_inference_locked") return "Show prediction";
     if (next?.phase === "voting_open") return `Reveal question · Q${next.questionIndex}`;
@@ -274,7 +282,9 @@ export default function HostPage() {
         advance();
       }
       if (e.key === "b") back();
-      if (e.key === "r" && snap?.phase === "reveal") reveal("");
+      if (e.key === "r" && (snap?.phase === "reveal" || snap?.phase === "voting_locked")) {
+        reveal("");
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

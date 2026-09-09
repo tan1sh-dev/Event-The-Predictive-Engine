@@ -833,6 +833,72 @@ describe("power-ups", () => {
     const later = engine.submitVote(1, q.id, "a", 0.5);
     assert.equal(later.ok, true);
   });
+
+  it("host Next starts Foresight extra instead of skipping the extra window", () => {
+    let now = 9_000_000;
+    const engine = new GameEngine({ clusterCount: 4, now: () => now });
+    engine.joinCluster(1, undefined, "s1");
+    engine.joinCluster(2, undefined, "s2");
+    engine.grantPowers([{ clusterNumber: 1, power: "foresight" }]);
+    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R4" && s.questionIndex === 1);
+    const q = engine.getCurrentQuestion()!;
+    engine.submitVote(2, q.id, "c", 0.5);
+
+    engine.advance();
+    assert.equal(engine.step.phase, "voting_open");
+    assert.equal(engine.snapshot().foresightGraceActive, true);
+    assert.equal(engine.clusterView(1)?.foresightWaiting, false);
+    assert.equal(engine.msUntilVoteDeadline(), 15_000);
+    assert.equal(engine.submitVote(1, q.id, "c", 1).ok, true);
+
+    engine.advance();
+    assert.equal(engine.step.phase, "voting_locked");
+  });
+
+  it("resolves Insurance, Amplify, and Foresight together on Round 4 question 1", () => {
+    let now = 10_000_000;
+    const engine = new GameEngine({ clusterCount: 6, now: () => now });
+    engine.joinCluster(1, undefined, "s1");
+    engine.joinCluster(2, undefined, "s2");
+    engine.joinCluster(3, undefined, "s3");
+    engine.joinCluster(4, undefined, "s4");
+    goTo(engine, (s) => s.phase === "voting_open" && s.roundId === "R4" && s.questionIndex === 1);
+    engine.setWeight(1, 2);
+    engine.setWeight(2, 2);
+    engine.setWeight(3, 2);
+    engine.setWeight(4, 2);
+    engine.grantPowers([
+      { clusterNumber: 1, power: "insurance" },
+      { clusterNumber: 2, power: "amplify" },
+      { clusterNumber: 3, power: "foresight" },
+    ]);
+    const q = engine.getCurrentQuestion()!;
+    assert.equal(engine.submitVote(1, q.id, "a", 1.5).ok, true);
+    assert.equal(engine.submitVote(2, q.id, "c", 0.5).ok, true);
+    assert.equal(engine.submitVote(4, q.id, "c", 1).ok, true);
+    assert.equal(engine.submitVote(3, q.id, "c", 0.5).ok, false);
+
+    engine.advance();
+    assert.equal(engine.snapshot().foresightGraceActive, true);
+    const split = engine.clusterView(3)?.crowdSplit?.find((s) => s.optionId === "c");
+    assert.equal(split?.count, 2);
+    assert.equal(engine.submitVote(3, q.id, "c", 0.8).ok, true);
+
+    engine.advance();
+    engine.advance();
+    assert.equal(engine.reveal("c").ok, true);
+    goTo(engine, (s) => s.phase === "weight_update" && s.roundId === "R4");
+
+    assert.ok(Math.abs(engine.getCluster(1)!.weight - 2) < 1e-9);
+    assert.ok(Math.abs(engine.getCluster(2)!.weight - 2 * Math.exp(2)) < 1e-9);
+    assert.ok(Math.abs(engine.getCluster(3)!.weight - 2 * Math.exp(0.8)) < 1e-9);
+    assert.ok(Math.abs(engine.getCluster(4)!.weight - 2 * Math.exp(1)) < 1e-9);
+    assert.equal(engine.getCluster(1)!.power?.used, true);
+    assert.equal(engine.getCluster(2)!.power?.used, true);
+    assert.equal(engine.getCluster(3)!.power?.used, true);
+    assert.equal(engine.getCluster(1)!.lastResult?.powerApplied, "insurance");
+    assert.equal(engine.getCluster(2)!.lastResult?.powerApplied, "amplify");
+  });
 });
 
 describe("freeze + ensemble", () => {

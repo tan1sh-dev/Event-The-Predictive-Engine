@@ -905,17 +905,20 @@ export class GameEngine {
   }
 
   /**
+   * Host Next and the vote timer both use this. If unused Foresight is still
+   * watching, start the extra 15s + crowd split instead of locking the room.
+   */
+  private maybeBeginForesightGrace(): boolean {
+    return !this.foresightGraceArmed && this.openForesightGrace();
+  }
+
+  /**
    * Called by the socket layer when the clock hits 0.
    * Locks the question, or gives Foresight holders a short extra window first.
    */
   expireOpenVote(): boolean {
     if (!this.scoredVoteOpen()) return false;
     if (this.voteDeadlineAt != null && this.now() < this.voteDeadlineAt) return false;
-
-    if (!this.foresightGraceArmed && this.openForesightGrace()) {
-      return true;
-    }
-
     this.advance();
     return true;
   }
@@ -1087,6 +1090,9 @@ export class GameEngine {
   }
 
   advance(): PhaseStep {
+    if (this.maybeBeginForesightGrace()) {
+      return this.step;
+    }
     if (this.stepIndex < PHASE_SEQUENCE.length - 1) {
       this.onLeaveStep(this.step);
       this.stepIndex += 1;

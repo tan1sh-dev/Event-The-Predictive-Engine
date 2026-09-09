@@ -153,7 +153,7 @@ function VoteForm({
   const displayWager = fixedWager ?? wager;
   const ready =
     Boolean(option) && (!wagerRequired || fixedWager != null || normalizeWager(wager) != null);
-  const frozen = lockedIn || expired;
+  const frozen = lockedIn || (expired && canLock);
 
   const lockIn = () => {
     if (frozen || !canLock) return;
@@ -390,6 +390,11 @@ export default function PhaseView({
             the room clock hits zero.
           </p>
         )}
+        {grace && view.power?.type === "foresight" && !waiting && (
+          <p className="mb-3 rounded-2xl bg-gold/12 px-4 py-2 text-center text-sm text-gold ring-1 ring-gold/30">
+            Extra 15s. The crowd is locked. Read the split, then lock in.
+          </p>
+        )}
         {armed && (
           <p className="mb-3 rounded-2xl bg-white/6 px-4 py-2 text-center text-sm text-cream/70 ring-1 ring-white/10">
             {armed === "insurance"
@@ -414,7 +419,7 @@ export default function PhaseView({
               ? view.pendingVote.wager
               : null
           }
-          split={grace ? view.crowdSplit : null}
+          split={waiting ? null : view.crowdSplit}
           expired={expired}
           canLock={!waiting}
           fixedWager={armed === "amplify" ? AMPLIFY_WAGER : null}
